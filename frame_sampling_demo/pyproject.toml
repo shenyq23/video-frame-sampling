@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "video-frame-sampling-demo"
+version = "0.1.0"
+description = "CLI framework for query-aware video frame sampling"
+requires-python = ">=3.9"
+dependencies = [
+  "numpy>=1.23",
+  "Pillow>=9.0",
+  "decord>=0.6.0",
+]
+
+[project.optional-dependencies]
+clip = ["torch>=2.0", "transformers>=4.40"]
+ui = ["gradio>=4.44,<6"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+frame-sampling = "frame_sampling_demo.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

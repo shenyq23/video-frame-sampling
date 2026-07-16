@@ -1,0 +1,2 @@
+-r ../AKS/requirements-keyframes.txt
+gradio>=4.44,<6
