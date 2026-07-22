@@ -39,19 +39,51 @@ npm install
 
 浏览器打开 `http://127.0.0.1:5173`。API 文档位于 `http://127.0.0.1:8000/docs`。
 
-## 特征模型配置
+## 候选帧间隔
 
-CLIP 可以直接在页面填写 Hugging Face checkpoint 或本地模型路径。第一次使用远程 checkpoint 时，需要由运行环境下载模型。
+候选帧模式选择“按时间间隔”后，可以输入任意大于 0 的有限数字，例如 `0.333`、
+`1.27` 或 `120.5`。视频只能在整数帧位置解码，因此结果页会同时显示请求间隔和
+按视频 FPS 对齐后的实际间隔。小于单帧时长的输入等价于每帧采样。
 
-Pangu/MEP 的服务地址和非敏感参数放在 `config/feature_models.json`，密钥放环境变量：
+## Pangu/MEP 密钥配置
+
+密钥不会通过网页上传，也不会写入任务数据库或 manifest。首次使用时复制示例文件：
 
 ```bash
-export PANGU_EMBED_API_KEY='...'
-export MEP_EMBED_APPID='...'
-export MEP_EMBED_SECRET_KEY='...'
+cd keyframe_visualizer
+cp .env.example .env
 ```
 
-修改对应档案并把 `enabled` 设为 `true` 后，网页才会显示该档案。API 不会把档案的具体配置或密钥返回浏览器。
+编辑 `.env`：
+
+```dotenv
+PANGU_EMBED_API_KEY=your-pangu-api-key
+MEP_EMBED_APPID=your-mep-app-id
+MEP_EMBED_SECRET_KEY=your-mep-secret-key
+```
+
+修改后重启后端。网页会显示服务配置是否就绪；缺少密钥的配置无法选择。真实 `.env`
+已被 `.gitignore` 排除，已有 Shell 环境变量优先于 `.env` 中的同名值。
+
+Pangu/MEP 的服务地址和非敏感参数仍放在 `config/feature_models.json`。如果暂时不希望
+在网页中显示某个服务，可以把对应 profile 的 `enabled` 改为 `false`。
+
+## CLIP 模型
+
+CLIP 支持三种来源：
+
+- Hugging Face 模型 ID，例如 `openai/clip-vit-base-patch32`；
+- 后端机器可访问的绝对目录；
+- 网页上传的离线模型压缩包。
+
+上传时选择 ZIP、TAR、TAR.GZ 或 TGZ 文件。压缩包中必须只有一个 Hugging Face CLIP
+模型，且至少包含 `config.json`、`preprocessor_config.json` 和 `.safetensors` 或
+`.bin` 权重，以及 `tokenizer.json` 或 `vocab.json + merges.txt`。后端会拒绝路径穿越、
+链接、特殊文件、不完整模型和超过限制的压缩包。
+校验成功后模型保存在 `data/models/clip/<model-id>/`，并自动出现在 CLIP 模型下拉框。
+
+如果前后端运行在同一台机器，不上传也可以直接填写模型绝对路径。前后端位于不同
+机器时，浏览器本机路径对后端无效，应使用压缩包上传。
 
 ## 结果 Manifest
 

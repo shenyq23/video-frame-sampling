@@ -1,4 +1,4 @@
-import type { AlgorithmMetadata, Job, Manifest, RunParameters } from "./types";
+import type { AlgorithmMetadata, ClipModel, Job, Manifest, RunParameters } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -19,6 +19,7 @@ async function checked<T>(responsePromise: Promise<Response>): Promise<T> {
 
 export const api = {
   algorithms: () => checked<AlgorithmMetadata[]>(fetch(`${API_BASE}/api/algorithms`)),
+  clipModels: () => checked<ClipModel[]>(fetch(`${API_BASE}/api/models/clip`)),
   jobs: () => checked<Job[]>(fetch(`${API_BASE}/api/jobs`)),
   job: (id: string) => checked<Job>(fetch(`${API_BASE}/api/jobs/${id}`)),
   manifest: (id: string) =>
@@ -28,6 +29,12 @@ export const api = {
     body.append("video", video);
     body.append("config", JSON.stringify({ algorithm: "aks", query, parameters }));
     return checked<Job>(fetch(`${API_BASE}/api/jobs`, { method: "POST", body }));
+  },
+  uploadClipModel: async (archive: File, name: string) => {
+    const body = new FormData();
+    body.append("archive", archive);
+    body.append("name", name);
+    return checked<ClipModel>(fetch(`${API_BASE}/api/models/clip`, { method: "POST", body }));
   },
   eventsUrl: (id: string) => `${API_BASE}/api/jobs/${id}/events`,
   videoUrl: (id: string) => `${API_BASE}/api/jobs/${id}/video`,

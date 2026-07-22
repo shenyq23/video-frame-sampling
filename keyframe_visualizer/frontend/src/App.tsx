@@ -3,11 +3,12 @@ import { api } from "./api";
 import { ResultView } from "./components/ResultView";
 import { RunForm } from "./components/RunForm";
 import { RunList } from "./components/RunList";
-import type { AlgorithmMetadata, Job, Manifest, RunParameters } from "./types";
+import type { AlgorithmMetadata, ClipModel, Job, Manifest, RunParameters } from "./types";
 
 export default function App() {
   const [algorithms, setAlgorithms] = useState<AlgorithmMetadata[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [clipModels, setClipModels] = useState<ClipModel[]>([]);
   const [selected, setSelected] = useState<Job | null>(null);
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -20,10 +21,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    Promise.all([api.algorithms(), api.jobs()])
-      .then(([algorithmData, jobData]) => {
+    Promise.all([api.algorithms(), api.jobs(), api.clipModels()])
+      .then(([algorithmData, jobData, modelData]) => {
         setAlgorithms(algorithmData);
         setJobs(jobData);
+        setClipModels(modelData);
         setSelected(jobData[0] ?? null);
       })
       .catch((error: Error) => setGlobalError(`无法连接后端：${error.message}`));
@@ -66,6 +68,12 @@ export default function App() {
     }
   };
 
+  const uploadClipModel = async (archive: File, name: string) => {
+    const model = await api.uploadClipModel(archive, name);
+    setClipModels((current) => [model, ...current.filter((item) => item.id !== model.id)]);
+    return model;
+  };
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -77,7 +85,13 @@ export default function App() {
 
       <main className="workspace">
         <aside className="control-column">
-          <RunForm algorithm={algorithms.find((item) => item.id === "aks")} busy={submitting} onSubmit={create} />
+          <RunForm
+            algorithm={algorithms.find((item) => item.id === "aks")}
+            clipModels={clipModels}
+            busy={submitting}
+            onSubmit={create}
+            onUploadClipModel={uploadClipModel}
+          />
           <RunList jobs={jobs} selectedId={selected?.id ?? null} onSelect={setSelected} />
         </aside>
         <div className="result-column"><ResultView job={selected} manifest={manifest} /></div>
@@ -85,4 +99,3 @@ export default function App() {
     </div>
   );
 }
-

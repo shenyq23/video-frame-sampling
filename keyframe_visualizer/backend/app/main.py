@@ -14,8 +14,16 @@ from pydantic import ValidationError
 
 from .algorithms.registry import AlgorithmRegistry
 from .jobs import JobManager
+from .models import ClipModelStore, ModelArchiveError
 from .schemas import CreateJobConfig, JobRecord
-from .settings import DATABASE_PATH, RUNS_DIR, UPLOAD_DIR, ensure_data_directories
+from .settings import (
+    CLIP_MODELS_DIR,
+    DATABASE_PATH,
+    RUNS_DIR,
+    UPLOAD_DIR,
+    ensure_data_directories,
+    feature_profile_status,
+)
 from .storage import JobStore, TERMINAL_STATUSES
 
 
@@ -23,6 +31,7 @@ ensure_data_directories()
 store = JobStore(DATABASE_PATH)
 registry = AlgorithmRegistry()
 manager = JobManager(store, registry)
+clip_models = ClipModelStore(CLIP_MODELS_DIR)
 
 
 @asynccontextmanager
@@ -43,6 +52,7 @@ app.add_middleware(
 
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v"}
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024 * 1024
+MAX_MODEL_UPLOAD_BYTES = 12 * 1024 * 1024 * 1024
 
 
 def _row_or_404(job_id: str) -> dict:
@@ -69,6 +79,45 @@ def health() -> dict:
 @app.get("/api/algorithms")
 def algorithms() -> list[dict]:
     return registry.metadata()
+
+
+@app.get("/api/settings/feature-profiles")
+def feature_profiles_status() -> dict:
+    return feature_profile_status()
+
+
+@app.get("/api/models/clip")
+def list_clip_models() -> list[dict]:
+    return clip_models.list()
+
+
+@app.post("/api/models/clip", status_code=201)
+async def upload_clip_model(
+    archive: UploadFile = File(...),
+    name: str = Form(""),
+) -> dict:
+    original_filename = archive.filename or "clip-model"
+    incoming = CLIP_MODELS_DIR / f".incoming-{uuid.uuid4().hex}"
+    size = 0
+    try:
+        with incoming.open("wb") as destination:
+            while chunk := await archive.read(1024 * 1024):
+                size += len(chunk)
+                if size > MAX_MODEL_UPLOAD_BYTES:
+                    raise HTTPException(status_code=413, detail="CLIP 模型压缩包超过 12 GB 限制")
+                destination.write(chunk)
+        if size == 0:
+            raise HTTPException(status_code=400, detail="模型压缩包为空")
+        try:
+            return clip_models.install_archive(
+                incoming,
+                display_name=name,
+                original_filename=original_filename,
+            )
+        except ModelArchiveError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+    finally:
+        incoming.unlink(missing_ok=True)
 
 
 @app.get("/api/jobs", response_model=list[JobRecord])

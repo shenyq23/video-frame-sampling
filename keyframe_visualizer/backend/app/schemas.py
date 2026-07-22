@@ -10,9 +10,10 @@ class AKSParameters(BaseModel):
     aks_mode: Literal["original", "robust"] = "robust"
     max_num_frames: int = Field(default=32, ge=1, le=512)
     candidate_sampling: Literal["original", "interval"] = "interval"
-    sample_interval: float = Field(default=1.0, gt=0, le=60)
+    sample_interval: float = Field(default=1.0, gt=0, allow_inf_nan=False)
     feature_backend: Literal["clip", "pangu", "mep"] = "clip"
     feature_profile: Optional[str] = None
+    clip_model_id: Optional[str] = None
     model_name: str = "openai/clip-vit-base-patch32"
     device: Literal["auto", "cuda", "mps", "cpu"] = "auto"
     batch_size: int = Field(default=16, ge=1, le=256)
@@ -28,6 +29,16 @@ class AKSParameters(BaseModel):
         if not value.strip():
             raise ValueError("model_name cannot be empty")
         return value.strip()
+
+    @field_validator("clip_model_id")
+    @classmethod
+    def validate_clip_model_id(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value or not value.replace("-", "").isalnum():
+            raise ValueError("clip_model_id is invalid")
+        return value
 
     @model_validator(mode="after")
     def validate_remote_profile(self) -> "AKSParameters":

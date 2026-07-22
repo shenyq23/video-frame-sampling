@@ -52,6 +52,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .field input:disabled { color: var(--muted); background: var(--surface-soft); }
 .text-button { margin: 17px 0 12px; padding: 0; border: 0; color: var(--accent); background: none; cursor: pointer; font-size: 12px; font-weight: 650; }
 .advanced-fields { padding: 14px; border-radius: 11px; background: var(--surface-soft); }
+.model-uploader { display: grid; gap: 10px; margin-top: 16px; padding: 14px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.model-uploader-title { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.model-uploader-title strong { font-size: 12px; }.model-uploader-title small, .model-uploader > small { color: var(--muted); font-size: 11px; }
+.model-upload-fields { display: grid; grid-template-columns: minmax(120px, 0.8fr) minmax(160px, 1.2fr) auto; gap: 9px; align-items: center; }
+.model-upload-fields input { width: 100%; min-width: 0; padding: 9px 10px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 9px; font-size: 11px; }
+.model-upload-fields input[type="file"] { background: var(--surface-soft); }
 .primary-button, .secondary-button { display: inline-flex; justify-content: center; align-items: center; border-radius: 9px; padding: 11px 16px; text-decoration: none; font-weight: 700; font-size: 13px; cursor: pointer; }
 .primary-button { width: 100%; margin-top: 19px; border: 1px solid var(--accent); color: #fff; background: var(--accent); box-shadow: 0 6px 18px rgba(23, 107, 80, 0.17); }
 .primary-button:disabled { opacity: 0.55; cursor: wait; }
@@ -118,6 +124,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .topbar { padding: 13px 16px; }.topbar-status { display: none; }
   .control-column, .result-column { padding: 20px 16px 40px; }
   .field-grid { grid-template-columns: 1fr; }
+  .model-uploader-title { align-items: start; flex-direction: column; gap: 3px; }.model-upload-fields { grid-template-columns: 1fr; }
   .result-title { display: grid; }.secondary-button { width: fit-content; }
   .summary-grid { grid-template-columns: 1fr; }.summary-grid > div { border-right: 0; border-bottom: 1px solid var(--line); }.summary-grid > div:last-child { border-bottom: 0; }
   .chart-heading, .frames-heading { align-items: start; flex-direction: column; gap: 4px; }

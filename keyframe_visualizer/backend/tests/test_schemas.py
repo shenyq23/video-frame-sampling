@@ -27,3 +27,9 @@ class SchemaTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             AKSParameters(max_num_frames=0)
 
+    def test_candidate_interval_accepts_arbitrary_positive_finite_numbers(self) -> None:
+        self.assertEqual(AKSParameters(sample_interval=0.000123).sample_interval, 0.000123)
+        self.assertEqual(AKSParameters(sample_interval=7200.25).sample_interval, 7200.25)
+        for invalid in (0, -0.1, float("inf"), float("nan")):
+            with self.subTest(invalid=invalid), self.assertRaises(ValidationError):
+                AKSParameters(sample_interval=invalid)

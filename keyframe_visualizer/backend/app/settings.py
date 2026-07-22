@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
+
+from dotenv import load_dotenv
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -12,12 +15,17 @@ DATA_DIR = PROJECT_DIR / "data"
 UPLOAD_DIR = DATA_DIR / "uploads"
 RUNS_DIR = DATA_DIR / "runs"
 DATABASE_PATH = DATA_DIR / "app.db"
+CLIP_MODELS_DIR = DATA_DIR / "models" / "clip"
 FEATURE_MODELS_PATH = PROJECT_DIR / "config" / "feature_models.json"
+ENV_PATH = PROJECT_DIR / ".env"
+
+load_dotenv(ENV_PATH, override=False)
 
 
 def ensure_data_directories() -> None:
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    CLIP_MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def load_feature_profiles() -> dict[str, dict[str, Any]]:
@@ -29,3 +37,21 @@ def load_feature_profiles() -> dict[str, dict[str, Any]]:
         raise ValueError("feature_models.json: profiles must be an object")
     return {str(key): dict(value) for key, value in profiles.items()}
 
+
+def feature_profile_status() -> dict[str, dict[str, Any]]:
+    statuses: dict[str, dict[str, Any]] = {}
+    for profile_id, profile in load_feature_profiles().items():
+        config = profile.get("config", {})
+        required = sorted(
+            str(value)
+            for key, value in config.items()
+            if str(key).endswith("_env") and value
+        )
+        missing = [name for name in required if not os.getenv(name)]
+        statuses[profile_id] = {
+            "enabled": bool(profile.get("enabled", True)),
+            "credentials_ready": not missing,
+            "required_environment_variables": required,
+            "missing_environment_variables": missing,
+        }
+    return statuses

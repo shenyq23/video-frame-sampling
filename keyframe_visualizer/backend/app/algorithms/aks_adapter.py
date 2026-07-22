@@ -10,7 +10,8 @@ from typing import Any
 
 import numpy as np
 
-from ..settings import AKS_ROOT, load_feature_profiles
+from ..models import ClipModelStore
+from ..settings import AKS_ROOT, CLIP_MODELS_DIR, feature_profile_status, load_feature_profiles
 from ..video_reader import open_video
 from .base import AlgorithmAdapter, ProgressCallback
 
@@ -20,8 +21,14 @@ class AKSAdapter(AlgorithmAdapter):
 
     def metadata(self) -> dict[str, Any]:
         profiles = load_feature_profiles()
+        statuses = feature_profile_status()
         public_profiles = [
-            {"id": key, "name": value.get("name", key), "backend": value.get("backend")}
+            {
+                "id": key,
+                "name": value.get("name", key),
+                "backend": value.get("backend"),
+                **statuses.get(key, {}),
+            }
             for key, value in profiles.items()
             if value.get("enabled", True)
         ]
@@ -103,6 +110,11 @@ class AKSAdapter(AlgorithmAdapter):
             raise ValueError("视频中没有可用候选帧")
 
         feature_config = self._feature_config(parameters)
+        model_name = parameters["model_name"]
+        if parameters.get("clip_model_id"):
+            if parameters["feature_backend"] != "clip":
+                raise ValueError("clip_model_id can only be used with the CLIP backend")
+            model_name = str(ClipModelStore(CLIP_MODELS_DIR).resolve(parameters["clip_model_id"]))
         device = (
             choose_device(parameters["device"])
             if parameters["feature_backend"] == "clip"
@@ -112,7 +124,7 @@ class AKSAdapter(AlgorithmAdapter):
         scorer = create_relevance_scorer(
             parameters["feature_backend"],
             feature_config,
-            model_name=parameters["model_name"],
+            model_name=model_name,
             device=device,
             batch_size=int(parameters["batch_size"]),
         )
@@ -230,6 +242,12 @@ class AKSAdapter(AlgorithmAdapter):
                 "interval_seconds": parameters["sample_interval"]
                 if parameters["candidate_sampling"] == "interval"
                 else None,
+                "effective_interval_seconds": (
+                    (candidate_indices[1] - candidate_indices[0]) / fps
+                    if parameters["candidate_sampling"] == "interval"
+                    and len(candidate_indices) > 1
+                    else None
+                ),
                 "candidate_count": len(candidate_indices),
             },
             "feature_extraction": scorer.metadata,

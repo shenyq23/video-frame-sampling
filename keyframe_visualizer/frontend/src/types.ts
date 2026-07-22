@@ -18,6 +18,17 @@ export interface FeatureProfile {
   id: string;
   name: string;
   backend: string;
+  enabled: boolean;
+  credentials_ready: boolean;
+  missing_environment_variables: string[];
+}
+
+export interface ClipModel {
+  id: string;
+  name: string;
+  source_filename: string;
+  size_bytes: number;
+  created_at: string;
 }
 
 export interface AlgorithmMetadata {
@@ -64,6 +75,7 @@ export interface Manifest {
   candidate_sampling: {
     mode: string;
     interval_seconds: number | null;
+    effective_interval_seconds: number | null;
     candidate_count: number;
   };
   feature_extraction: Record<string, unknown>;
@@ -83,6 +95,7 @@ export interface RunParameters {
   sample_interval: number;
   feature_backend: "clip" | "pangu" | "mep";
   feature_profile: string | null;
+  clip_model_id: string | null;
   model_name: string;
   device: "auto" | "cuda" | "mps" | "cpu";
   batch_size: number;
@@ -92,4 +105,3 @@ export interface RunParameters {
   max_depth: number;
   jpeg_quality: number;
 }
-

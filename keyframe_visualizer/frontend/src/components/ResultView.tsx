@@ -48,7 +48,7 @@ export function ResultView({ job, manifest }: Props) {
 
       <div className="summary-grid">
         <div><span>已选帧</span><strong>{manifest.summary.selected_keyframes}</strong><small>/ 请求 {manifest.summary.requested_keyframes}</small></div>
-        <div><span>候选帧</span><strong>{manifest.summary.candidate_frames}</strong><small>{manifest.candidate_sampling.interval_seconds ? `每 ${manifest.candidate_sampling.interval_seconds}s` : "原始采样"}</small></div>
+        <div><span>候选帧</span><strong>{manifest.summary.candidate_frames}</strong><small>{manifest.candidate_sampling.interval_seconds ? `请求 ${manifest.candidate_sampling.interval_seconds}s · 实际 ${manifest.candidate_sampling.effective_interval_seconds?.toFixed(6) ?? "—"}s` : "原始采样"}</small></div>
         <div><span>视频时长</span><strong>{formatTime(manifest.video.duration_seconds)}</strong><small>{manifest.video.fps.toFixed(2)} FPS</small></div>
       </div>
 
@@ -76,4 +76,3 @@ export function ResultView({ job, manifest }: Props) {
     </section>
   );
 }
-

@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
-import type { AlgorithmMetadata, RunParameters } from "../types";
+import type { AlgorithmMetadata, ClipModel, RunParameters } from "../types";
 
 interface Props {
   algorithm?: AlgorithmMetadata;
+  clipModels: ClipModel[];
   busy: boolean;
   onSubmit: (video: File, query: string, parameters: RunParameters) => Promise<void>;
+  onUploadClipModel: (archive: File, name: string) => Promise<ClipModel>;
 }
 
 const defaults: RunParameters = {
@@ -14,6 +16,7 @@ const defaults: RunParameters = {
   sample_interval: 1,
   feature_backend: "clip",
   feature_profile: null,
+  clip_model_id: null,
   model_name: "openai/clip-vit-base-patch32",
   device: "auto",
   batch_size: 16,
@@ -24,12 +27,15 @@ const defaults: RunParameters = {
   jpeg_quality: 92,
 };
 
-export function RunForm({ algorithm, busy, onSubmit }: Props) {
+export function RunForm({ algorithm, clipModels, busy, onSubmit, onUploadClipModel }: Props) {
   const [video, setVideo] = useState<File | null>(null);
   const [query, setQuery] = useState("");
   const [parameters, setParameters] = useState<RunParameters>(defaults);
   const [advanced, setAdvanced] = useState(false);
   const [error, setError] = useState("");
+  const [modelArchive, setModelArchive] = useState<File | null>(null);
+  const [modelDisplayName, setModelDisplayName] = useState("");
+  const [uploadingModel, setUploadingModel] = useState(false);
 
   const profiles = useMemo(
     () =>
@@ -48,12 +54,43 @@ export function RunForm({ algorithm, busy, onSubmit }: Props) {
       setError("请选择视频并输入 query。");
       return;
     }
+    if (
+      parameters.candidate_sampling === "interval" &&
+      (!Number.isFinite(parameters.sample_interval) || parameters.sample_interval <= 0)
+    ) {
+      setError("候选间隔必须是大于 0 的有限数字。");
+      return;
+    }
     if (parameters.feature_backend !== "clip" && !parameters.feature_profile) {
       setError("远程特征模型需要先在服务端启用一个配置档案。");
       return;
     }
+    const selectedProfile = profiles.find((profile) => profile.id === parameters.feature_profile);
+    if (selectedProfile && !selectedProfile.credentials_ready) {
+      setError(`服务端缺少环境变量：${selectedProfile.missing_environment_variables.join(", ")}`);
+      return;
+    }
     setError("");
     await onSubmit(video, query.trim(), parameters);
+  };
+
+  const uploadModel = async () => {
+    if (!modelArchive) {
+      setError("请先选择一个 CLIP 模型压缩包。");
+      return;
+    }
+    setError("");
+    setUploadingModel(true);
+    try {
+      const model = await onUploadClipModel(modelArchive, modelDisplayName.trim());
+      update("clip_model_id", model.id);
+      setModelArchive(null);
+      setModelDisplayName("");
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "CLIP 模型上传失败");
+    } finally {
+      setUploadingModel(false);
+    }
   };
 
   return (
@@ -109,13 +146,15 @@ export function RunForm({ algorithm, busy, onSubmit }: Props) {
         </label>
         <label className="field">
           <span>候选间隔（秒）</span>
-          <input type="number" min="0.01" max="60" step="0.05" disabled={parameters.candidate_sampling === "original"} value={parameters.sample_interval} onChange={(e) => update("sample_interval", Number(e.target.value))} />
+          <input type="number" step="any" disabled={parameters.candidate_sampling === "original"} value={parameters.sample_interval} onChange={(e) => update("sample_interval", Number(e.target.value))} />
+          <small>支持任意正数；实际间隔会对齐到视频帧。</small>
         </label>
         <label className="field">
           <span>特征模型</span>
           <select value={parameters.feature_backend} onChange={(e) => {
             update("feature_backend", e.target.value as RunParameters["feature_backend"]);
             update("feature_profile", null);
+            update("clip_model_id", null);
           }}>
             <option value="clip">CLIP</option>
             <option value="pangu">Pangu</option>
@@ -124,19 +163,42 @@ export function RunForm({ algorithm, busy, onSubmit }: Props) {
         </label>
         {parameters.feature_backend === "clip" ? (
           <label className="field">
-            <span>CLIP checkpoint</span>
-            <input value={parameters.model_name} onChange={(e) => update("model_name", e.target.value)} />
+            <span>CLIP 模型</span>
+            <select value={parameters.clip_model_id ?? ""} onChange={(e) => update("clip_model_id", e.target.value || null)}>
+              <option value="">Hugging Face ID / 服务端路径</option>
+              {clipModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
+            </select>
           </label>
         ) : (
           <label className="field">
             <span>服务配置</span>
             <select value={parameters.feature_profile ?? ""} onChange={(e) => update("feature_profile", e.target.value || null)}>
               <option value="">请选择已启用配置</option>
-              {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
+              {profiles.map((profile) => <option key={profile.id} value={profile.id} disabled={!profile.credentials_ready}>{profile.name}{profile.credentials_ready ? "" : " · 缺少密钥"}</option>)}
             </select>
+            {parameters.feature_profile && <small>{profiles.find((profile) => profile.id === parameters.feature_profile)?.credentials_ready ? "服务端凭据已就绪" : "服务端凭据未配置"}</small>}
           </label>
         )}
       </div>
+
+      {parameters.feature_backend === "clip" && !parameters.clip_model_id && (
+        <label className="field field-wide">
+          <span>模型 ID 或服务端绝对路径</span>
+          <input value={parameters.model_name} onChange={(e) => update("model_name", e.target.value)} placeholder="openai/clip-vit-base-patch32" />
+        </label>
+      )}
+
+      {parameters.feature_backend === "clip" && (
+        <div className="model-uploader">
+          <div className="model-uploader-title"><strong>上传离线 CLIP 模型</strong><small>ZIP / TAR / TAR.GZ / TGZ，最大 12 GB</small></div>
+          <div className="model-upload-fields">
+            <input aria-label="模型显示名称" value={modelDisplayName} onChange={(e) => setModelDisplayName(e.target.value)} placeholder="模型显示名称（可选）" />
+            <input aria-label="CLIP 模型压缩包" type="file" accept=".zip,.tar,.gz,.tgz,application/zip,application/gzip" onChange={(e) => setModelArchive(e.target.files?.[0] ?? null)} />
+            <button className="secondary-button" type="button" disabled={uploadingModel} onClick={uploadModel}>{uploadingModel ? "上传并校验中…" : "上传模型"}</button>
+          </div>
+          {modelArchive && <small>已选择：{modelArchive.name} · {(modelArchive.size / 1024 / 1024).toFixed(1)} MB</small>}
+        </div>
+      )}
 
       <button className="text-button" type="button" onClick={() => setAdvanced((value) => !value)} aria-expanded={advanced}>
         {advanced ? "收起高级参数" : "展开高级参数"}
@@ -158,4 +220,3 @@ export function RunForm({ algorithm, busy, onSubmit }: Props) {
     </form>
   );
 }
-
