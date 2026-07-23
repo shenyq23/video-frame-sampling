@@ -128,6 +128,16 @@ export function ResultView({ job, manifest, clipModels, deleting, onDelete }: Pr
 
   useEffect(() => setFrameSet("selected"), [job?.id]);
 
+  useEffect(() => {
+    const video = videoRef.current;
+    return () => {
+      if (!video) return;
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    };
+  }, [job?.id, manifest?.run_id]);
+
   const frameSets = useMemo(() => {
     if (!manifest) return null;
     const selected = normalizeSelectedFrames(manifest);

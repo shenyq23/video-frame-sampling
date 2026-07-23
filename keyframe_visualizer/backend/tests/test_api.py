@@ -8,6 +8,7 @@ import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 import app.main as main_module
@@ -19,6 +20,12 @@ app = main_module.app
 
 
 class ApiTests(unittest.TestCase):
+    @staticmethod
+    def _locked_error() -> PermissionError:
+        error = PermissionError("file is in use")
+        error.winerror = 32  # type: ignore[attr-defined]
+        return error
+
     def test_health_and_algorithm_catalog(self) -> None:
         with TestClient(app) as client:
             health = client.get("/api/health")
@@ -156,3 +163,43 @@ class ApiTests(unittest.TestCase):
             self.assertTrue(video.exists())
             self.assertTrue(output_dir.exists())
             self.assertIsNotNone(store.get_raw("running-job"))
+
+    def test_windows_file_lock_is_retried_before_delete_succeeds(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "video.mp4"
+            path.write_bytes(b"video")
+            original_unlink = Path.unlink
+            calls = 0
+
+            def flaky_unlink(target, *args, **kwargs):
+                nonlocal calls
+                calls += 1
+                if calls < 3:
+                    raise self._locked_error()
+                return original_unlink(target, *args, **kwargs)
+
+            with patch.object(
+                Path, "unlink", autospec=True, side_effect=flaky_unlink
+            ), patch.object(main_module.time, "sleep"):
+                main_module._delete_with_retries(
+                    path, is_directory=False, label="上传视频"
+                )
+
+            self.assertEqual(calls, 3)
+            self.assertFalse(path.exists())
+
+    def test_persistent_windows_file_lock_returns_423_with_clear_message(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "video.mp4"
+            path.write_bytes(b"video")
+            with patch.object(
+                Path, "unlink", autospec=True, side_effect=self._locked_error()
+            ), patch.object(main_module.time, "sleep"):
+                with self.assertRaises(HTTPException) as raised:
+                    main_module._delete_with_retries(
+                        path, is_directory=False, label="上传视频"
+                    )
+
+            self.assertEqual(raised.exception.status_code, 423)
+            self.assertIn("文件仍被浏览器或其他程序占用", raised.exception.detail)
+            self.assertTrue(path.exists())

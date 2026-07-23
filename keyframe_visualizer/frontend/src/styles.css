@@ -84,6 +84,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .run-progress, .large-progress { height: 3px; overflow: hidden; border-radius: 99px; background: var(--line); }
 .run-progress i, .large-progress i { display: block; height: 100%; background: var(--accent); transition: width 0.35s ease; }
 .empty-state, .job-state { min-height: 65vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.deleting-state { min-height: 65vh; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); text-align: center; }
+.deleting-state h2 { margin: 0 0 7px; color: var(--ink); font-family: Georgia, serif; font-weight: 500; }
+.deleting-state p { margin: 3px 0; }
 .job-detail-state .job-state { min-height: 420px; }
 .empty-state p, .job-state > p:not(.eyebrow) { max-width: 520px; color: var(--muted); line-height: 1.6; }
 .state-query { margin-bottom: 0; color: var(--ink) !important; font-family: Georgia, serif; }

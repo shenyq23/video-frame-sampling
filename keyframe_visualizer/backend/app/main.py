@@ -4,6 +4,7 @@ import asyncio
 import json
 import re
 import shutil
+import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -54,6 +55,7 @@ app.add_middleware(
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v"}
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024 * 1024
 MAX_MODEL_UPLOAD_BYTES = 12 * 1024 * 1024 * 1024
+DELETE_RETRY_DELAYS_SECONDS = (0.15, 0.3, 0.6, 1.0, 1.5)
 
 
 def _row_or_404(job_id: str) -> dict:
@@ -81,6 +83,43 @@ def _task_owned_path(raw_path: str, root: Path, label: str) -> Path:
             detail=f"Refusing to delete {label} outside the managed data directory",
         )
     return candidate
+
+
+def _delete_with_retries(path: Path, *, is_directory: bool, label: str) -> None:
+    if not path.exists():
+        return
+    for attempt in range(len(DELETE_RETRY_DELAYS_SECONDS) + 1):
+        try:
+            if is_directory:
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+            return
+        except FileNotFoundError:
+            return
+        except PermissionError as error:
+            if attempt >= len(DELETE_RETRY_DELAYS_SECONDS):
+                windows_error = getattr(error, "winerror", None)
+                reason = (
+                    "文件仍被浏览器或其他程序占用"
+                    if windows_error in {32, 33}
+                    else "没有权限删除文件"
+                )
+                raise HTTPException(
+                    status_code=423,
+                    detail=(
+                        f"无法清除{label}：{reason}。请关闭其他打开该视频的网页或程序后重试。"
+                        f"路径：{path}"
+                    ),
+                ) from error
+            time.sleep(DELETE_RETRY_DELAYS_SECONDS[attempt])
+        except OSError as error:
+            if attempt >= len(DELETE_RETRY_DELAYS_SECONDS):
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"无法清除{label}：{error}。路径：{path}",
+                ) from error
+            time.sleep(DELETE_RETRY_DELAYS_SECONDS[attempt])
 
 
 @app.get("/api/health")
@@ -157,11 +196,11 @@ def delete_job(job_id: str) -> Response:
     if video_path.exists():
         if not video_path.is_file():
             raise HTTPException(status_code=409, detail="任务上传路径不是普通文件")
-        video_path.unlink()
+        _delete_with_retries(video_path, is_directory=False, label="上传视频")
     if output_dir.exists():
         if not output_dir.is_dir():
             raise HTTPException(status_code=409, detail="任务输出路径不是目录")
-        shutil.rmtree(output_dir)
+        _delete_with_retries(output_dir, is_directory=True, label="任务输出")
 
     store.delete(job_id)
     return Response(status_code=204)

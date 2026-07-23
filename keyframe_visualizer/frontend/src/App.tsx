@@ -13,6 +13,7 @@ export default function App() {
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Job | null>(null);
   const [globalError, setGlobalError] = useState("");
 
   const refresh = useCallback(async () => {
@@ -78,14 +79,27 @@ export default function App() {
   const deleteJob = async (job: Job) => {
     setDeletingJobId(job.id);
     setGlobalError("");
+    setPendingDelete(job);
+    setSelected(null);
+    setManifest(null);
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 350));
+    let deleted = false;
     try {
       await api.deleteJob(job.id);
-      const remaining = await api.jobs();
+      deleted = true;
+      let remaining: Job[];
+      try {
+        remaining = await api.jobs();
+      } catch {
+        remaining = jobs.filter((item) => item.id !== job.id);
+      }
       setJobs(remaining);
       setSelected(remaining[0] ?? null);
-      setManifest(null);
+      setPendingDelete(null);
     } catch (error) {
       setGlobalError(error instanceof Error ? error.message : "清除任务失败");
+      if (!deleted) setSelected(job);
+      setPendingDelete(null);
     } finally {
       setDeletingJobId(null);
     }
@@ -112,13 +126,22 @@ export default function App() {
           <RunList jobs={jobs} selectedId={selected?.id ?? null} onSelect={setSelected} />
         </aside>
         <div className="result-column">
-          <ResultView
-            job={selected}
-            manifest={manifest}
-            clipModels={clipModels}
-            deleting={selected?.id === deletingJobId}
-            onDelete={deleteJob}
-          />
+          {pendingDelete ? (
+            <section className="deleting-state" aria-live="polite">
+              <div className="empty-orbit" />
+              <h2>正在清除任务</h2>
+              <p>{pendingDelete.original_filename}</p>
+              <p>正在释放视频连接并删除任务数据…</p>
+            </section>
+          ) : (
+            <ResultView
+              job={selected}
+              manifest={manifest}
+              clipModels={clipModels}
+              deleting={selected?.id === deletingJobId}
+              onDelete={deleteJob}
+            />
+          )}
         </div>
       </main>
     </div>
