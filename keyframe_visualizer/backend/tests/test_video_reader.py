@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
+import app.video_reader as video_reader
 from app.video_reader import OpenCVVideoSource
 
 
@@ -33,3 +34,22 @@ class VideoReaderTests(unittest.TestCase):
             self.assertAlmostEqual(source.fps, 5.0)
             self.assertEqual(frames.shape, (2, 24, 32, 3))
             self.assertGreater(float(frames[1, :, :, 0].mean()), 120)
+            source.close()
+            self.assertIsNone(source.capture)
+
+    def test_release_video_closes_registered_native_source(self) -> None:
+        class FakeSource:
+            closed = False
+
+            def close(self):
+                self.closed = True
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "video.mp4"
+            source = FakeSource()
+            key = str(path.resolve())
+            with video_reader._ACTIVE_SOURCES_LOCK:
+                video_reader._ACTIVE_SOURCES[key] = source  # type: ignore[assignment]
+            video_reader.release_video(path)
+            self.assertTrue(source.closed)
+            self.assertNotIn(key, video_reader._ACTIVE_SOURCES)

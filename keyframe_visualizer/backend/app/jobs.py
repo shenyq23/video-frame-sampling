@@ -8,6 +8,7 @@ from typing import Optional
 
 from .algorithms.registry import AlgorithmRegistry
 from .storage import JobStore
+from .video_reader import release_video
 
 
 class JobManager:
@@ -54,6 +55,7 @@ class JobManager:
         if not row:
             return
         self.store.update(job_id, status="running", stage="准备任务", progress=0.01, error=None)
+        video_path = Path(row["video_path"])
         try:
             config = json.loads(row["config_json"])
             adapter = self.registry.get(row["algorithm"])
@@ -63,13 +65,14 @@ class JobManager:
 
             manifest_path = adapter.run(
                 job_id=job_id,
-                video_path=Path(row["video_path"]),
+                video_path=video_path,
                 original_filename=row["original_filename"],
                 query=row["query"],
                 parameters=config["parameters"],
                 output_dir=Path(row["output_dir"]),
                 progress=progress,
             )
+            release_video(video_path)
             self.store.update(
                 job_id,
                 status="succeeded",
@@ -79,9 +82,12 @@ class JobManager:
             )
         except Exception as error:
             traceback.print_exc()
+            release_video(video_path)
             self.store.update(
                 job_id,
                 status="failed",
                 stage="运行失败",
                 error=str(error),
             )
+        finally:
+            release_video(video_path)

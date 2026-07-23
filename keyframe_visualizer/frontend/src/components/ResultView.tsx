@@ -86,10 +86,12 @@ function DeleteTaskButton({
   job,
   deleting,
   onDelete,
+  beforeDelete,
 }: {
   job: Job;
   deleting: boolean;
   onDelete: (job: Job) => Promise<void>;
+  beforeDelete?: () => void;
 }) {
   if (job.status !== "succeeded" && job.status !== "failed") return null;
   const confirmDelete = () => {
@@ -97,7 +99,10 @@ function DeleteTaskButton({
       `确定彻底清除任务“${job.original_filename}”吗？\n\n` +
         "上传视频、所有抽帧图片、manifest、中间结果和任务记录都会被永久删除，且无法恢复。",
     );
-    if (confirmed) void onDelete(job);
+    if (confirmed) {
+      beforeDelete?.();
+      void onDelete(job);
+    }
   };
   return (
     <button
@@ -124,19 +129,10 @@ function normalizeSelectedFrames(manifest: Manifest): FrameRecord[] {
 
 export function ResultView({ job, manifest, clipModels, deleting, onDelete }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const seekSequenceRef = useRef(0);
   const [frameSet, setFrameSet] = useState<FrameSetKey>("selected");
 
   useEffect(() => setFrameSet("selected"), [job?.id]);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    return () => {
-      if (!video) return;
-      video.pause();
-      video.removeAttribute("src");
-      video.load();
-    };
-  }, [job?.id, manifest?.run_id]);
 
   const frameSets = useMemo(() => {
     if (!manifest) return null;
@@ -170,6 +166,7 @@ export function ResultView({ job, manifest, clipModels, deleting, onDelete }: Pr
   const seek = (frame: FrameRecord) => {
     const video = videoRef.current;
     if (!video) return;
+    const sequence = ++seekSequenceRef.current;
 
     const seekAndPlay = () => {
       const upperBound = Number.isFinite(video.duration)
@@ -177,14 +174,19 @@ export function ResultView({ job, manifest, clipModels, deleting, onDelete }: Pr
         : frame.timestamp_seconds;
       const target = Math.max(0, Math.min(frame.timestamp_seconds, upperBound));
       video.pause();
-      video.currentTime = target;
       const playAfterSeek = () => {
-        void video.play().catch(() => undefined);
+        if (seekSequenceRef.current === sequence) {
+          void video.play().catch(() => undefined);
+        }
       };
-      if (Math.abs(video.currentTime - target) < 0.01) {
+      if (Math.abs(video.currentTime - target) < 0.01 && !video.seeking) {
         playAfterSeek();
       } else {
         video.addEventListener("seeked", playAfterSeek, { once: true });
+        video.currentTime = target;
+        // Start playback within the click gesture; the browser will hold it
+        // until seeking completes, and the seeked handler is a fallback.
+        void video.play().catch(() => undefined);
       }
       video.scrollIntoView({ behavior: "smooth", block: "center" });
     };
@@ -195,6 +197,15 @@ export function ResultView({ job, manifest, clipModels, deleting, onDelete }: Pr
       video.addEventListener("loadedmetadata", seekAndPlay, { once: true });
       video.load();
     }
+  };
+
+  const releaseMedia = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    seekSequenceRef.current += 1;
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
   };
 
   if (!job) {
@@ -235,7 +246,12 @@ export function ResultView({ job, manifest, clipModels, deleting, onDelete }: Pr
         <div><p className="eyebrow">RESULT · {manifest.algorithm.mode.toUpperCase()}</p><h2>{manifest.video.filename}</h2><p className="result-query">“{manifest.query}”</p></div>
         <div className="result-actions">
           <a className="secondary-button" href={api.manifestDownloadUrl(job.id)}>下载 Manifest</a>
-          <DeleteTaskButton job={job} deleting={deleting} onDelete={onDelete} />
+          <DeleteTaskButton
+            job={job}
+            deleting={deleting}
+            onDelete={onDelete}
+            beforeDelete={releaseMedia}
+          />
         </div>
       </div>
 

@@ -32,6 +32,7 @@ const defaults: RunParameters = {
 export function RunForm({ algorithm, clipModels, busy, onSubmit, onUploadClipModel }: Props) {
   const [video, setVideo] = useState<File | null>(null);
   const [query, setQuery] = useState("");
+  const [sampleIntervalInput, setSampleIntervalInput] = useState("");
   const [parameters, setParameters] = useState<RunParameters>(defaults);
   const [advanced, setAdvanced] = useState(false);
   const [error, setError] = useState("");
@@ -56,10 +57,12 @@ export function RunForm({ algorithm, clipModels, busy, onSubmit, onUploadClipMod
       setError("请选择视频并输入 query。");
       return;
     }
-    if (
-      parameters.candidate_sampling === "interval" &&
-      (!Number.isFinite(parameters.sample_interval) || parameters.sample_interval <= 0)
-    ) {
+    const parsedSampleInterval = Number(sampleIntervalInput);
+    if (parameters.candidate_sampling === "interval" && (
+      !sampleIntervalInput.trim() ||
+      !Number.isFinite(parsedSampleInterval) ||
+      parsedSampleInterval <= 0
+    )) {
       setError("候选间隔必须是大于 0 的有限数字。");
       return;
     }
@@ -73,7 +76,13 @@ export function RunForm({ algorithm, clipModels, busy, onSubmit, onUploadClipMod
       return;
     }
     setError("");
-    await onSubmit(video, query.trim(), parameters);
+    await onSubmit(video, query.trim(), {
+      ...parameters,
+      sample_interval:
+        parameters.candidate_sampling === "interval"
+          ? parsedSampleInterval
+          : parameters.sample_interval,
+    });
   };
 
   const uploadModel = async () => {
@@ -148,7 +157,15 @@ export function RunForm({ algorithm, clipModels, busy, onSubmit, onUploadClipMod
         </label>
         <label className="field">
           <span>候选间隔（秒）</span>
-          <input type="number" step="any" disabled={parameters.candidate_sampling === "original"} value={parameters.sample_interval} onChange={(e) => update("sample_interval", Number(e.target.value))} />
+          <input
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
+            disabled={parameters.candidate_sampling === "original"}
+            value={sampleIntervalInput}
+            placeholder="例如：1.0"
+            onChange={(e) => setSampleIntervalInput(e.target.value)}
+          />
           <small>支持任意正数；实际间隔会对齐到视频帧。</small>
         </label>
         <label className="field">
