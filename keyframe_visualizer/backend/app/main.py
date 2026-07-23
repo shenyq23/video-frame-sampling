@@ -3,13 +3,14 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import shutil
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import ValidationError
 
 from .algorithms.registry import AlgorithmRegistry
@@ -71,6 +72,17 @@ def _safe_media_path(root: Path, relative_path: str) -> Path:
     return candidate
 
 
+def _task_owned_path(raw_path: str, root: Path, label: str) -> Path:
+    candidate = Path(raw_path).expanduser().resolve()
+    resolved_root = root.resolve()
+    if resolved_root not in candidate.parents:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Refusing to delete {label} outside the managed data directory",
+        )
+    return candidate
+
+
 @app.get("/api/health")
 def health() -> dict:
     return {"status": "ok"}
@@ -128,6 +140,31 @@ def list_jobs() -> list[JobRecord]:
 @app.get("/api/jobs/{job_id}", response_model=JobRecord)
 def get_job(job_id: str) -> JobRecord:
     return store.to_record(_row_or_404(job_id))
+
+
+@app.delete("/api/jobs/{job_id}", status_code=204)
+def delete_job(job_id: str) -> Response:
+    row = _row_or_404(job_id)
+    if row["status"] not in TERMINAL_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail="排队中或运行中的任务不能清除，请等待任务结束后重试",
+        )
+
+    video_path = _task_owned_path(row["video_path"], UPLOAD_DIR, "uploaded video")
+    output_dir = _task_owned_path(row["output_dir"], RUNS_DIR, "run output")
+
+    if video_path.exists():
+        if not video_path.is_file():
+            raise HTTPException(status_code=409, detail="任务上传路径不是普通文件")
+        video_path.unlink()
+    if output_dir.exists():
+        if not output_dir.is_dir():
+            raise HTTPException(status_code=409, detail="任务输出路径不是目录")
+        shutil.rmtree(output_dir)
+
+    store.delete(job_id)
+    return Response(status_code=204)
 
 
 @app.post("/api/jobs", response_model=JobRecord, status_code=202)

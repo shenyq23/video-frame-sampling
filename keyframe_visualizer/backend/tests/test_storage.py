@@ -16,7 +16,7 @@ class StorageTests(unittest.TestCase):
                 job_id="job-1",
                 algorithm="aks",
                 query="query",
-                config={"parameters": {}},
+                config={"parameters": {"feature_backend": "mep", "max_num_frames": 24}},
                 video_path=tmp_path / "video.mp4",
                 original_filename="video.mp4",
                 output_dir=tmp_path / "run",
@@ -24,6 +24,10 @@ class StorageTests(unittest.TestCase):
             queued = store.get_raw("job-1")
             self.assertIsNotNone(queued)
             self.assertEqual(queued["status"], "queued")  # type: ignore[index]
+            self.assertEqual(  # type: ignore[arg-type]
+                store.to_record(queued).parameters,
+                {"feature_backend": "mep", "max_num_frames": 24},
+            )
 
             store.update("job-1", status="running", stage="scoring", progress=0.4)
             running = store.to_record(store.get_raw("job-1"))  # type: ignore[arg-type]
@@ -42,4 +46,6 @@ class StorageTests(unittest.TestCase):
             complete = store.to_record(store.get_raw("job-1"))  # type: ignore[arg-type]
             self.assertTrue(complete.manifest_available)
             self.assertEqual(store.pending_ids(), [])
-
+            self.assertTrue(store.delete("job-1"))
+            self.assertIsNone(store.get_raw("job-1"))
+            self.assertFalse(store.delete("job-1"))

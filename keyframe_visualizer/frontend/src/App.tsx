@@ -12,6 +12,7 @@ export default function App() {
   const [selected, setSelected] = useState<Job | null>(null);
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
   const [globalError, setGlobalError] = useState("");
 
   const refresh = useCallback(async () => {
@@ -74,6 +75,22 @@ export default function App() {
     return model;
   };
 
+  const deleteJob = async (job: Job) => {
+    setDeletingJobId(job.id);
+    setGlobalError("");
+    try {
+      await api.deleteJob(job.id);
+      const remaining = await api.jobs();
+      setJobs(remaining);
+      setSelected(remaining[0] ?? null);
+      setManifest(null);
+    } catch (error) {
+      setGlobalError(error instanceof Error ? error.message : "清除任务失败");
+    } finally {
+      setDeletingJobId(null);
+    }
+  };
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -94,7 +111,15 @@ export default function App() {
           />
           <RunList jobs={jobs} selectedId={selected?.id ?? null} onSelect={setSelected} />
         </aside>
-        <div className="result-column"><ResultView job={selected} manifest={manifest} /></div>
+        <div className="result-column">
+          <ResultView
+            job={selected}
+            manifest={manifest}
+            clipModels={clipModels}
+            deleting={selected?.id === deletingJobId}
+            onDelete={deleteJob}
+          />
+        </div>
       </main>
     </div>
   );

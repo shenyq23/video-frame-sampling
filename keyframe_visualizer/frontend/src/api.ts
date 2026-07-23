@@ -22,6 +22,19 @@ export const api = {
   clipModels: () => checked<ClipModel[]>(fetch(`${API_BASE}/api/models/clip`)),
   jobs: () => checked<Job[]>(fetch(`${API_BASE}/api/jobs`)),
   job: (id: string) => checked<Job>(fetch(`${API_BASE}/api/jobs/${id}`)),
+  deleteJob: async (id: string) => {
+    const response = await fetch(`${API_BASE}/api/jobs/${id}`, { method: "DELETE" });
+    if (!response.ok) {
+      let message = `${response.status} ${response.statusText}`;
+      try {
+        const body = await response.json();
+        message = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+      } catch {
+        // Keep the HTTP status for non-JSON failures.
+      }
+      throw new Error(message);
+    }
+  },
   manifest: (id: string) =>
     checked<Manifest>(fetch(`${API_BASE}/api/jobs/${id}/manifest`)),
   createJob: async (video: File, query: string, parameters: RunParameters) => {

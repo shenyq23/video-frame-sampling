@@ -22,6 +22,8 @@ class AKSParameters(BaseModel):
     std_threshold: float = -100.0
     max_depth: int = Field(default=5, ge=0, le=16)
     jpeg_quality: int = Field(default=92, ge=1, le=100)
+    save_uniform_baseline: bool = True
+    save_candidate_frames: bool = True
 
     @field_validator("model_name")
     @classmethod
@@ -70,6 +72,7 @@ class JobRecord(BaseModel):
     algorithm: str
     query: str
     original_filename: str
+    parameters: dict[str, Any] = Field(default_factory=dict)
     error: Optional[str] = None
     manifest_available: bool = False
 

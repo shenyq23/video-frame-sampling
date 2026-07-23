@@ -87,12 +87,14 @@ class AKSAdapter(AlgorithmAdapter):
             sys.path.insert(0, str(AKS_ROOT))
         from PIL import Image
         from aks_core import normalize_scores, select_frames
-        from aks_keyframes_v2 import choose_device, sample_candidate_indices
+        from aks_keyframes_v2 import (
+            choose_device,
+            sample_candidate_indices,
+            sample_uniform_indices,
+        )
         from feature_backends import create_relevance_scorer
 
         output_dir.mkdir(parents=True, exist_ok=True)
-        frames_dir = output_dir / "frames"
-        frames_dir.mkdir(parents=True, exist_ok=True)
 
         progress("解析视频", 0.04)
         reader = open_video(video_path, int(parameters["decode_threads"]))
@@ -170,55 +172,98 @@ class AKSAdapter(AlgorithmAdapter):
             )
             rank_by_position.update({position: rank + 1 for rank, position in enumerate(ranked)})
 
-        progress("导出关键帧", 0.84)
-        selected_records: list[dict[str, Any]] = []
         selected_indices = selection.frame_indices
-        for start in range(0, len(selected_indices), batch_size):
-            indices = selected_indices[start : start + batch_size]
-            arrays = reader.get_batch(indices)
-            for frame_index, array in zip(indices, arrays):
-                selected_order = len(selected_records) + 1
-                candidate_position = position_by_frame[frame_index]
-                timestamp = frame_index / fps
-                filename = (
-                    f"{selected_order:03d}_t{timestamp:010.3f}_f{frame_index}.jpg"
-                )
-                Image.fromarray(array).save(
-                    frames_dir / filename, quality=int(parameters["jpeg_quality"])
-                )
-                segment_id, segment = segment_by_position.get(candidate_position, (-1, None))
-                selected_records.append(
-                    {
-                        "selected_order": selected_order,
-                        "file": f"frames/{filename}",
+        selected_positions = {position_by_frame[index] for index in selected_indices}
+        save_uniform = bool(parameters.get("save_uniform_baseline", True))
+        save_candidates = bool(parameters.get("save_candidate_frames", True))
+        uniform_indices = (
+            sample_uniform_indices(candidate_indices, len(selected_indices))
+            if save_uniform
+            else []
+        )
+        export_total = len(selected_indices) + len(uniform_indices)
+        if save_candidates:
+            export_total += len(candidate_indices)
+        exported = 0
+
+        def export_frame_group(
+            frame_indices: list[int], relative_dir: str, *, include_aks_trace: bool = False
+        ) -> list[dict[str, Any]]:
+            nonlocal exported
+            target_dir = output_dir / relative_dir
+            target_dir.mkdir(parents=True, exist_ok=True)
+            records: list[dict[str, Any]] = []
+            for start in range(0, len(frame_indices), batch_size):
+                indices = frame_indices[start : start + batch_size]
+                arrays = reader.get_batch(indices)
+                for frame_index, array in zip(indices, arrays):
+                    order = len(records) + 1
+                    candidate_position = position_by_frame[frame_index]
+                    timestamp = frame_index / fps
+                    filename = f"{order:04d}_t{timestamp:010.3f}_f{frame_index}.jpg"
+                    Image.fromarray(array).save(
+                        target_dir / filename, quality=int(parameters["jpeg_quality"])
+                    )
+                    record: dict[str, Any] = {
+                        "order": order,
+                        "file": f"{relative_dir}/{filename}",
                         "original_frame_index": frame_index,
                         "timestamp_seconds": round(timestamp, 6),
                         "candidate_index": candidate_position,
                         "candidate_order": candidate_position + 1,
                         "relevance_score": score_by_frame[frame_index],
                         "normalized_score": normalized_by_frame[frame_index],
-                        "segment_id": segment_id,
-                        "segment_depth": segment.depth if segment else None,
-                        "segment_quota": segment.quota if segment else None,
-                        "rank_in_segment": rank_by_position.get(candidate_position),
+                        "selected_by_aks": candidate_position in selected_positions,
+                        "selected": candidate_position in selected_positions,
                     }
-                )
+                    if include_aks_trace:
+                        segment_id, segment = segment_by_position.get(
+                            candidate_position, (-1, None)
+                        )
+                        record.update(
+                            {
+                                "selected_order": order,
+                                "segment_id": segment_id,
+                                "segment_depth": segment.depth if segment else None,
+                                "segment_quota": segment.quota if segment else None,
+                                "rank_in_segment": rank_by_position.get(candidate_position),
+                            }
+                        )
+                    records.append(record)
+                    exported += 1
+                if export_total:
+                    progress(
+                        f"导出帧图片 {exported}/{export_total}",
+                        0.82 + 0.15 * exported / export_total,
+                    )
+            return records
 
-        selected_positions = {position_by_frame[index] for index in selected_indices}
-        candidate_records = [
-            {
-                "candidate_index": position,
-                "candidate_order": position + 1,
-                "original_frame_index": frame_index,
-                "timestamp_seconds": round(frame_index / fps, 6),
-                "relevance_score": float(scores[position]),
-                "normalized_score": float(normalized_scores[position]),
-                "selected": position in selected_positions,
-            }
-            for position, frame_index in enumerate(candidate_indices)
-        ]
+        progress("导出 AKS 关键帧", 0.82)
+        selected_records = export_frame_group(
+            selected_indices, "frames", include_aks_trace=True
+        )
+        uniform_records = (
+            export_frame_group(uniform_indices, "uniform_frames") if save_uniform else []
+        )
+        candidate_records = (
+            export_frame_group(candidate_indices, "candidate_frames")
+            if save_candidates
+            else [
+                {
+                    "candidate_index": position,
+                    "candidate_order": position + 1,
+                    "original_frame_index": frame_index,
+                    "timestamp_seconds": round(frame_index / fps, 6),
+                    "relevance_score": float(scores[position]),
+                    "normalized_score": float(normalized_scores[position]),
+                    "selected_by_aks": position in selected_positions,
+                    "selected": position in selected_positions,
+                }
+                for position, frame_index in enumerate(candidate_indices)
+            ]
+        )
 
-        progress("生成 Manifest", 0.96)
+        progress("生成 Manifest", 0.98)
         manifest = {
             "schema_version": "1.0",
             "run_id": job_id,
@@ -258,7 +303,26 @@ class AKSAdapter(AlgorithmAdapter):
                 "candidate_frames": len(candidate_indices),
             },
             "selected_frames": selected_records,
+            "uniform_frames": uniform_records,
             "candidates": candidate_records,
+            "frame_sets": {
+                "selected": {
+                    "available": True,
+                    "count": len(selected_records),
+                    "frames": selected_records,
+                },
+                "uniform": {
+                    "available": save_uniform,
+                    "selection_rule": "uniformly spaced over the AKS candidate pool",
+                    "count": len(uniform_records),
+                    "frames": uniform_records,
+                },
+                "candidates": {
+                    "available": save_candidates,
+                    "count": len(candidate_records) if save_candidates else 0,
+                    "frames": candidate_records if save_candidates else [],
+                },
+            },
             "algorithm_trace": {
                 "segments": [asdict(segment) for segment in selection.segments]
             },

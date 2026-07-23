@@ -111,8 +111,20 @@ class JobStore:
             ).fetchall()
         return [str(row["id"]) for row in rows]
 
+    def delete(self, job_id: str) -> bool:
+        with self._lock, self._connect() as connection:
+            cursor = connection.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+        return cursor.rowcount > 0
+
     @staticmethod
     def to_record(row: dict[str, Any]) -> JobRecord:
+        try:
+            config = json.loads(row.get("config_json") or "{}")
+            parameters = config.get("parameters", {})
+            if not isinstance(parameters, dict):
+                parameters = {}
+        except (TypeError, json.JSONDecodeError):
+            parameters = {}
         return JobRecord(
             id=row["id"],
             created_at=row["created_at"],
@@ -123,7 +135,7 @@ class JobStore:
             algorithm=row["algorithm"],
             query=row["query"],
             original_filename=row["original_filename"],
+            parameters=parameters,
             error=row.get("error"),
             manifest_available=bool(row.get("manifest_path")),
         )
-

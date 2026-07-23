@@ -25,6 +25,8 @@ const defaults: RunParameters = {
   std_threshold: -100,
   max_depth: 5,
   jpeg_quality: 92,
+  save_uniform_baseline: true,
+  save_candidate_frames: true,
 };
 
 export function RunForm({ algorithm, clipModels, busy, onSubmit, onUploadClipModel }: Props) {
@@ -212,6 +214,8 @@ export function RunForm({ algorithm, clipModels, busy, onSubmit, onUploadClipMod
           <label className="field"><span>Batch size</span><input type="number" min="1" max="256" value={parameters.batch_size} onChange={(e) => update("batch_size", Number(e.target.value))} /></label>
           <label className="field"><span>设备</span><select value={parameters.device} onChange={(e) => update("device", e.target.value as RunParameters["device"])}><option value="auto">Auto</option><option value="cuda">CUDA</option><option value="mps">MPS</option><option value="cpu">CPU</option></select></label>
           <label className="field"><span>JPEG 质量</span><input type="number" min="1" max="100" value={parameters.jpeg_quality} onChange={(e) => update("jpeg_quality", Number(e.target.value))} /></label>
+          <label className="check-field"><input type="checkbox" checked={parameters.save_uniform_baseline} onChange={(e) => update("save_uniform_baseline", e.target.checked)} /><span>保存同数量均匀抽帧</span></label>
+          <label className="check-field"><input type="checkbox" checked={parameters.save_candidate_frames} onChange={(e) => update("save_candidate_frames", e.target.checked)} /><span>保存全部候选帧</span></label>
         </div>
       )}
 

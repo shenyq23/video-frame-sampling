@@ -10,6 +10,7 @@ export interface Job {
   algorithm: string;
   query: string;
   original_filename: string;
+  parameters: Partial<RunParameters>;
   error: string | null;
   manifest_available: boolean;
 }
@@ -49,6 +50,9 @@ export interface CandidateFrame {
   relevance_score: number;
   normalized_score: number;
   selected: boolean;
+  file?: string;
+  order?: number;
+  selected_by_aks?: boolean;
 }
 
 export interface SelectedFrame extends Omit<CandidateFrame, "selected"> {
@@ -58,6 +62,31 @@ export interface SelectedFrame extends Omit<CandidateFrame, "selected"> {
   segment_depth: number | null;
   segment_quota: number | null;
   rank_in_segment: number | null;
+}
+
+export interface FrameRecord {
+  order: number;
+  selected_order?: number;
+  file: string;
+  original_frame_index: number;
+  timestamp_seconds: number;
+  candidate_index: number;
+  candidate_order: number;
+  relevance_score: number;
+  normalized_score: number;
+  selected_by_aks: boolean;
+  selected?: boolean;
+  segment_id?: number;
+  segment_depth?: number | null;
+  segment_quota?: number | null;
+  rank_in_segment?: number | null;
+}
+
+export interface FrameSet {
+  available: boolean;
+  count: number;
+  selection_rule?: string;
+  frames: FrameRecord[];
 }
 
 export interface Manifest {
@@ -85,7 +114,13 @@ export interface Manifest {
     candidate_frames: number;
   };
   selected_frames: SelectedFrame[];
+  uniform_frames?: FrameRecord[];
   candidates: CandidateFrame[];
+  frame_sets?: {
+    selected: FrameSet;
+    uniform: FrameSet;
+    candidates: FrameSet;
+  };
 }
 
 export interface RunParameters {
@@ -104,4 +139,6 @@ export interface RunParameters {
   std_threshold: number;
   max_depth: number;
   jpeg_quality: number;
+  save_uniform_baseline: boolean;
+  save_candidate_frames: boolean;
 }
