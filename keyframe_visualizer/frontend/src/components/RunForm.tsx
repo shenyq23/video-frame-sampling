@@ -32,6 +32,7 @@ const defaults: RunParameters = {
 export function RunForm({ algorithm, clipModels, busy, onSubmit, onUploadClipModel }: Props) {
   const [video, setVideo] = useState<File | null>(null);
   const [query, setQuery] = useState("");
+  const [maxFramesInput, setMaxFramesInput] = useState("");
   const [sampleIntervalInput, setSampleIntervalInput] = useState("");
   const [parameters, setParameters] = useState<RunParameters>(defaults);
   const [advanced, setAdvanced] = useState(false);
@@ -57,6 +58,16 @@ export function RunForm({ algorithm, clipModels, busy, onSubmit, onUploadClipMod
       setError("请选择视频并输入 query。");
       return;
     }
+    const parsedMaxFrames = Number(maxFramesInput);
+    if (
+      !maxFramesInput.trim() ||
+      !Number.isInteger(parsedMaxFrames) ||
+      parsedMaxFrames < 1 ||
+      parsedMaxFrames > 512
+    ) {
+      setError("目标帧数必须是 1～512 之间的整数。");
+      return;
+    }
     const parsedSampleInterval = Number(sampleIntervalInput);
     if (parameters.candidate_sampling === "interval" && (
       !sampleIntervalInput.trim() ||
@@ -78,6 +89,7 @@ export function RunForm({ algorithm, clipModels, busy, onSubmit, onUploadClipMod
     setError("");
     await onSubmit(video, query.trim(), {
       ...parameters,
+      max_num_frames: parsedMaxFrames,
       sample_interval:
         parameters.candidate_sampling === "interval"
           ? parsedSampleInterval
@@ -146,7 +158,14 @@ export function RunForm({ algorithm, clipModels, busy, onSubmit, onUploadClipMod
         </label>
         <label className="field">
           <span>目标帧数</span>
-          <input type="number" min="1" max="512" value={parameters.max_num_frames} onChange={(e) => update("max_num_frames", Number(e.target.value))} />
+          <input
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            value={maxFramesInput}
+            placeholder="例如：32"
+            onChange={(e) => setMaxFramesInput(e.target.value)}
+          />
         </label>
         <label className="field">
           <span>候选帧模式</span>

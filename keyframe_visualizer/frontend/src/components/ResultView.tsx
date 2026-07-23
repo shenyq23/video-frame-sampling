@@ -129,7 +129,6 @@ function normalizeSelectedFrames(manifest: Manifest): FrameRecord[] {
 
 export function ResultView({ job, manifest, clipModels, deleting, onDelete }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const seekSequenceRef = useRef(0);
   const [frameSet, setFrameSet] = useState<FrameSetKey>("selected");
 
   useEffect(() => setFrameSet("selected"), [job?.id]);
@@ -163,46 +162,9 @@ export function ResultView({ job, manifest, clipModels, deleting, onDelete }: Pr
     };
   }, [manifest]);
 
-  const seek = (frame: FrameRecord) => {
-    const video = videoRef.current;
-    if (!video) return;
-    const sequence = ++seekSequenceRef.current;
-
-    const seekAndPlay = () => {
-      const upperBound = Number.isFinite(video.duration)
-        ? Math.max(0, video.duration - 0.001)
-        : frame.timestamp_seconds;
-      const target = Math.max(0, Math.min(frame.timestamp_seconds, upperBound));
-      video.pause();
-      const playAfterSeek = () => {
-        if (seekSequenceRef.current === sequence) {
-          void video.play().catch(() => undefined);
-        }
-      };
-      if (Math.abs(video.currentTime - target) < 0.01 && !video.seeking) {
-        playAfterSeek();
-      } else {
-        video.addEventListener("seeked", playAfterSeek, { once: true });
-        video.currentTime = target;
-        // Start playback within the click gesture; the browser will hold it
-        // until seeking completes, and the seeked handler is a fallback.
-        void video.play().catch(() => undefined);
-      }
-      video.scrollIntoView({ behavior: "smooth", block: "center" });
-    };
-
-    if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
-      seekAndPlay();
-    } else {
-      video.addEventListener("loadedmetadata", seekAndPlay, { once: true });
-      video.load();
-    }
-  };
-
   const releaseMedia = () => {
     const video = videoRef.current;
     if (!video) return;
-    seekSequenceRef.current += 1;
     video.pause();
     video.removeAttribute("src");
     video.load();
@@ -285,13 +247,12 @@ export function ResultView({ job, manifest, clipModels, deleting, onDelete }: Pr
             );
           })}
         </div>
-        <span>点击任意帧跳转到原视频位置</span>
       </div>
 
       {activeFrames.length ? (
         <div className="frame-grid">
           {activeFrames.map((frame) => (
-            <button className="frame-card" key={`${frameSet}-${frame.order}-${frame.original_frame_index}`} onClick={() => seek(frame)}>
+            <article className="frame-card" key={`${frameSet}-${frame.order}-${frame.original_frame_index}`}>
               <div className="frame-image-wrap">
                 <img src={api.mediaUrl(job.id, frame.file)} alt={`${tabs.find((tab) => tab.key === frameSet)?.label}第 ${frame.order} 帧，时间 ${formatTime(frame.timestamp_seconds)}`} loading="lazy" />
                 <span className="frame-order">{String(frame.order).padStart(2, "0")}</span>
@@ -307,7 +268,7 @@ export function ResultView({ job, manifest, clipModels, deleting, onDelete }: Pr
                   <div><dt>被 AKS 选中</dt><dd>{frame.selected_by_aks ? "是" : "否"}</dd></div>
                 )}
               </dl>
-            </button>
+            </article>
           ))}
         </div>
       ) : (
