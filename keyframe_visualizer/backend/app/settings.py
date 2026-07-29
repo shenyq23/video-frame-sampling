@@ -17,6 +17,7 @@ RUNS_DIR = DATA_DIR / "runs"
 DATABASE_PATH = DATA_DIR / "app.db"
 CLIP_MODELS_DIR = DATA_DIR / "models" / "clip"
 FEATURE_MODELS_PATH = PROJECT_DIR / "config" / "feature_models.json"
+VLM_MODELS_PATH = PROJECT_DIR / "config" / "vlm_models.json"
 ENV_PATH = PROJECT_DIR / ".env"
 
 load_dotenv(ENV_PATH, override=False)
@@ -53,5 +54,38 @@ def feature_profile_status() -> dict[str, dict[str, Any]]:
             "credentials_ready": not missing,
             "required_environment_variables": required,
             "missing_environment_variables": missing,
+        }
+    return statuses
+
+
+def load_vlm_profiles() -> dict[str, dict[str, Any]]:
+    if not VLM_MODELS_PATH.exists():
+        return {}
+    raw = json.loads(VLM_MODELS_PATH.read_text(encoding="utf-8"))
+    profiles = raw.get("profiles", {})
+    if not isinstance(profiles, dict):
+        raise ValueError("vlm_models.json: profiles must be an object")
+    return {str(key): dict(value) for key, value in profiles.items()}
+
+
+def vlm_profile_status() -> dict[str, dict[str, Any]]:
+    statuses: dict[str, dict[str, Any]] = {}
+    for profile_id, profile in load_vlm_profiles().items():
+        config = profile.get("config", {})
+        required = sorted(
+            str(value)
+            for key, value in config.items()
+            if str(key).endswith("_env") and value
+        )
+        missing = [name for name in required if not os.getenv(name)]
+        statuses[profile_id] = {
+            "id": profile_id,
+            "name": str(profile.get("name", profile_id)),
+            "backend": str(profile.get("backend", "mep")),
+            "enabled": bool(profile.get("enabled", True)),
+            "credentials_ready": not missing,
+            "required_environment_variables": required,
+            "missing_environment_variables": missing,
+            "max_frames": int(config.get("max_frames", 32)),
         }
     return statuses

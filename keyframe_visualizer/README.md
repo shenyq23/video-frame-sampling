@@ -9,6 +9,7 @@
 - `backend/`：FastAPI、SQLite 任务队列和 AKS Adapter。
 - `frontend/`：React + TypeScript 页面。
 - `config/feature_models.json`：服务端 Pangu/MEP 配置档案。
+- `config/vlm_models.json`：服务端 VLM 配置档案（当前支持 MEP VLM）。
 - `data/uploads/`：上传视频，首次启动时自动创建。
 - `data/runs/<job-id>/`：关键帧和标准 manifest。
 
@@ -115,6 +116,35 @@ WinError 32 文件占用进行短暂重试。如果视频同时被其他浏览�
 接口会返回明确的 `423 Locked`，关闭占用程序后可直接再次点击清除。
 
 无论任务成功或失败，任务 worker 都会在写入最终状态前显式释放 Decord/OpenCV 的视频解码器句柄，因此失败任务也可以直接从详情页清除。
+
+## 抽帧结果结合 VLM 问答
+
+VLM 配置与抽帧特征配置分开管理。复制 `.env.example` 后补充 MEP VLM 的认证信息：
+
+```dotenv
+MEP_VLM_APPID=your-vlm-app-id
+MEP_VLM_SECRET_KEY=your-vlm-secret-key
+```
+
+然后根据实际环境修改 `config/vlm_models.json` 中的 `elb`、`b_id` 和 `flow_id`。重启后端，
+网页会在成功任务详情页显示“基于当前帧集合回答 Query”区域。可以在以下三种输入之间切换：
+
+- AKS 抽出帧；
+- 同数量均匀抽帧；
+- 所有候选帧。
+
+Query 默认使用抽帧任务的 Query，也可以在详情页重新输入。点击“生成 VLM 回答”后，后端
+会从当前任务的 Manifest 读取图片，按视频时间顺序组成多图请求，并把回答保存到：
+
+```text
+data/runs/<job-id>/vlm_results/<frame-set>.json
+```
+
+回答区域会展示使用的帧数量、是否因服务的 `max_frames` 限制而均匀缩减，以及实际发送给
+VLM 的证据帧和时间戳。服务配置中的 `max_image_dimension`、`jpeg_quality` 和 `max_frames`
+可以用来控制请求体大小。认证信息只从后端环境变量读取，不会进入网页、SQLite 或 Manifest。
+
+如果服务配置缺少环境变量，网页会将该配置标记为不可用；补齐 `.env` 后必须重启后端。
 
 ## 测试
 

@@ -32,6 +32,41 @@ export interface ClipModel {
   created_at: string;
 }
 
+export interface VlmProfile {
+  id: string;
+  name: string;
+  backend: string;
+  enabled: boolean;
+  credentials_ready: boolean;
+  required_environment_variables: string[];
+  missing_environment_variables: string[];
+  max_frames: number;
+}
+
+export interface VlmUsedFrame {
+  order: number | null;
+  file: string;
+  timestamp_seconds: number | null;
+  original_frame_index: number | null;
+  candidate_order: number | null;
+}
+
+export interface VlmAnswer {
+  schema_version: string;
+  job_id: string;
+  created_at: string;
+  profile_id: string;
+  profile_name: string;
+  frame_set: "selected" | "uniform" | "candidates";
+  frame_set_name: string;
+  query: string;
+  answer: string;
+  source_frame_count: number;
+  used_frame_count: number;
+  frames_limited: boolean;
+  used_frames: VlmUsedFrame[];
+}
+
 export interface AlgorithmMetadata {
   id: string;
   name: string;

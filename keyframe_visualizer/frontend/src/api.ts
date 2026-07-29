@@ -1,4 +1,12 @@
-import type { AlgorithmMetadata, ClipModel, Job, Manifest, RunParameters } from "./types";
+import type {
+  AlgorithmMetadata,
+  ClipModel,
+  Job,
+  Manifest,
+  RunParameters,
+  VlmAnswer,
+  VlmProfile,
+} from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -20,6 +28,8 @@ async function checked<T>(responsePromise: Promise<Response>): Promise<T> {
 export const api = {
   algorithms: () => checked<AlgorithmMetadata[]>(fetch(`${API_BASE}/api/algorithms`)),
   clipModels: () => checked<ClipModel[]>(fetch(`${API_BASE}/api/models/clip`)),
+  vlmProfiles: () =>
+    checked<Record<string, VlmProfile>>(fetch(`${API_BASE}/api/settings/vlm-profiles`)),
   jobs: () => checked<Job[]>(fetch(`${API_BASE}/api/jobs`)),
   job: (id: string) => checked<Job>(fetch(`${API_BASE}/api/jobs/${id}`)),
   deleteJob: async (id: string) => {
@@ -37,6 +47,21 @@ export const api = {
   },
   manifest: (id: string) =>
     checked<Manifest>(fetch(`${API_BASE}/api/jobs/${id}/manifest`)),
+  savedVlmAnswer: async (id: string, frameSet: string) => {
+    const response = await fetch(
+      `${API_BASE}/api/jobs/${id}/vlm-answer?frame_set=${encodeURIComponent(frameSet)}`,
+    );
+    if (response.status === 404) return null;
+    return checked<VlmAnswer>(Promise.resolve(response));
+  },
+  createVlmAnswer: (id: string, frameSet: string, query: string, vlmProfile: string) =>
+    checked<VlmAnswer>(
+      fetch(`${API_BASE}/api/jobs/${id}/vlm-answer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ frame_set: frameSet, query, vlm_profile: vlmProfile }),
+      }),
+    ),
   createJob: async (video: File, query: string, parameters: RunParameters) => {
     const body = new FormData();
     body.append("video", video);

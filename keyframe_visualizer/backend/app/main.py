@@ -9,7 +9,7 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import ValidationError
@@ -17,7 +17,7 @@ from pydantic import ValidationError
 from .algorithms.registry import AlgorithmRegistry
 from .jobs import JobManager
 from .models import ClipModelStore, ModelArchiveError
-from .schemas import CreateJobConfig, JobRecord
+from .schemas import CreateJobConfig, JobRecord, VlmAnswerRequest, VlmAnswerResult
 from .settings import (
     CLIP_MODELS_DIR,
     DATABASE_PATH,
@@ -25,8 +25,11 @@ from .settings import (
     UPLOAD_DIR,
     ensure_data_directories,
     feature_profile_status,
+    vlm_profile_status,
 )
 from .storage import JobStore, TERMINAL_STATUSES
+from .vlm.client import VlmRequestError
+from .vlm.service import VlmAnswerService
 
 
 ensure_data_directories()
@@ -34,6 +37,7 @@ store = JobStore(DATABASE_PATH)
 registry = AlgorithmRegistry()
 manager = JobManager(store, registry)
 clip_models = ClipModelStore(CLIP_MODELS_DIR)
+vlm_answers = VlmAnswerService()
 
 
 @asynccontextmanager
@@ -46,7 +50,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="Keyframe Visualizer API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -135,6 +139,11 @@ def algorithms() -> list[dict]:
 @app.get("/api/settings/feature-profiles")
 def feature_profiles_status() -> dict:
     return feature_profile_status()
+
+
+@app.get("/api/settings/vlm-profiles")
+def vlm_profiles_status() -> dict:
+    return vlm_profile_status()
 
 
 @app.get("/api/models/clip")
@@ -288,6 +297,40 @@ def download_manifest(job_id: str) -> FileResponse:
     if not row.get("manifest_path"):
         raise HTTPException(status_code=409, detail="Manifest is not available")
     return FileResponse(row["manifest_path"], filename=f"{job_id}_manifest.json")
+
+
+@app.get("/api/jobs/{job_id}/vlm-answer", response_model=VlmAnswerResult)
+def get_vlm_answer(
+    job_id: str,
+    frame_set: str = Query(pattern="^(selected|uniform|candidates)$"),
+) -> VlmAnswerResult:
+    row = _row_or_404(job_id)
+    result = vlm_answers.saved_answer(Path(row["output_dir"]), frame_set)
+    if result is None:
+        raise HTTPException(status_code=404, detail="这组帧还没有保存的 VLM 回答")
+    return VlmAnswerResult.model_validate(result)
+
+
+@app.post("/api/jobs/{job_id}/vlm-answer", response_model=VlmAnswerResult)
+def create_vlm_answer(job_id: str, request: VlmAnswerRequest) -> VlmAnswerResult:
+    row = _row_or_404(job_id)
+    if row["status"] != "succeeded" or not row.get("manifest_path"):
+        raise HTTPException(status_code=409, detail="只有抽帧成功的任务才能进行 VLM 问答")
+    manifest_path = Path(row["manifest_path"])
+    if not manifest_path.is_file():
+        raise HTTPException(status_code=404, detail="Manifest file is missing")
+    try:
+        result = vlm_answers.answer(
+            job_id=job_id,
+            output_dir=Path(row["output_dir"]),
+            manifest_path=manifest_path,
+            frame_set=request.frame_set,
+            query=request.query,
+            profile_id=request.vlm_profile,
+        )
+    except VlmRequestError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    return VlmAnswerResult.model_validate(result)
 
 
 @app.get("/api/jobs/{job_id}/video")

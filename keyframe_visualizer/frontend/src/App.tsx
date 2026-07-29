@@ -3,12 +3,20 @@ import { api } from "./api";
 import { ResultView } from "./components/ResultView";
 import { RunForm } from "./components/RunForm";
 import { RunList } from "./components/RunList";
-import type { AlgorithmMetadata, ClipModel, Job, Manifest, RunParameters } from "./types";
+import type {
+  AlgorithmMetadata,
+  ClipModel,
+  Job,
+  Manifest,
+  RunParameters,
+  VlmProfile,
+} from "./types";
 
 export default function App() {
   const [algorithms, setAlgorithms] = useState<AlgorithmMetadata[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [clipModels, setClipModels] = useState<ClipModel[]>([]);
+  const [vlmProfiles, setVlmProfiles] = useState<VlmProfile[]>([]);
   const [selected, setSelected] = useState<Job | null>(null);
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -23,11 +31,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    Promise.all([api.algorithms(), api.jobs(), api.clipModels()])
-      .then(([algorithmData, jobData, modelData]) => {
+    Promise.all([api.algorithms(), api.jobs(), api.clipModels(), api.vlmProfiles()])
+      .then(([algorithmData, jobData, modelData, vlmProfileData]) => {
         setAlgorithms(algorithmData);
         setJobs(jobData);
         setClipModels(modelData);
+        setVlmProfiles(Object.values(vlmProfileData));
         setSelected(jobData[0] ?? null);
       })
       .catch((error: Error) => setGlobalError(`无法连接后端：${error.message}`));
@@ -138,6 +147,7 @@ export default function App() {
               job={selected}
               manifest={manifest}
               clipModels={clipModels}
+              vlmProfiles={vlmProfiles}
               deleting={selected?.id === deletingJobId}
               onDelete={deleteJob}
             />

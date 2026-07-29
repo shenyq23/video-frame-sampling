@@ -196,7 +196,7 @@ export function RunForm({ algorithm, clipModels, busy, onSubmit, onUploadClipMod
           }}>
             <option value="clip">CLIP</option>
             <option value="pangu">Pangu</option>
-            <option value="mep">MEP</option>
+            <option value="mep">86M</option>
           </select>
         </label>
         {parameters.feature_backend === "clip" ? (

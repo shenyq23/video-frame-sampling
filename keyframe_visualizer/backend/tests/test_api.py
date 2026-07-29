@@ -5,6 +5,7 @@ import json
 import tempfile
 import unittest
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -40,6 +41,10 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(credentials.status_code, 200)
             self.assertIn("pangu-default", credentials.json())
 
+            vlm_credentials = client.get("/api/settings/vlm-profiles")
+            self.assertEqual(vlm_credentials.status_code, 200)
+            self.assertIn("mep-vlm-default", vlm_credentials.json())
+
             models = client.get("/api/models/clip")
             self.assertEqual(models.status_code, 200)
 
@@ -70,6 +75,70 @@ class ApiTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 201)
                 self.assertEqual(response.json()["name"], "Offline model")
                 self.assertEqual(len(model_store.list()), 1)
+
+    def test_creates_and_reads_vlm_answer_for_succeeded_job(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            video = root / "video.mp4"
+            video.write_bytes(b"video")
+            output_dir = root / "run"
+            output_dir.mkdir()
+            manifest = output_dir / "manifest.json"
+            manifest.write_text("{}", encoding="utf-8")
+            store = JobStore(root / "jobs.db")
+            store.create(
+                job_id="vlm-job",
+                algorithm="aks",
+                query="原始问题",
+                config={"parameters": {}},
+                video_path=video,
+                original_filename="video.mp4",
+                output_dir=output_dir,
+            )
+            store.update(
+                "vlm-job",
+                status="succeeded",
+                stage="done",
+                progress=1.0,
+                manifest_path=str(manifest),
+            )
+            result = {
+                "schema_version": "1.0",
+                "job_id": "vlm-job",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "profile_id": "mep-vlm-default",
+                "profile_name": "MEP VLM",
+                "frame_set": "selected",
+                "frame_set_name": "抽帧算法选出的帧",
+                "query": "发生了什么？",
+                "answer": "测试回答",
+                "source_frame_count": 2,
+                "used_frame_count": 2,
+                "frames_limited": False,
+                "used_frames": [],
+            }
+            with patch.object(main_module, "store", store), patch.object(
+                main_module.vlm_answers, "answer", return_value=result
+            ) as answer, patch.object(
+                main_module.vlm_answers, "saved_answer", return_value=result
+            ):
+                with TestClient(app) as client:
+                    response = client.post(
+                        "/api/jobs/vlm-job/vlm-answer",
+                        json={
+                            "frame_set": "selected",
+                            "query": "发生了什么？",
+                            "vlm_profile": "mep-vlm-default",
+                        },
+                    )
+                    saved = client.get(
+                        "/api/jobs/vlm-job/vlm-answer?frame_set=selected"
+                    )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["answer"], "测试回答")
+            self.assertEqual(saved.status_code, 200)
+            self.assertEqual(answer.call_args.kwargs["frame_set"], "selected")
 
     def test_video_endpoint_supports_byte_ranges_for_seeking(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

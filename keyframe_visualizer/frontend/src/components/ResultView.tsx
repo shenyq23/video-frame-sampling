@@ -6,6 +6,8 @@ import type {
   Job,
   Manifest,
   RunParameters,
+  VlmAnswer,
+  VlmProfile,
 } from "../types";
 import { ScoreChart } from "./ScoreChart";
 
@@ -13,6 +15,7 @@ interface Props {
   job: Job | null;
   manifest: Manifest | null;
   clipModels: ClipModel[];
+  vlmProfiles: VlmProfile[];
   deleting: boolean;
   onDelete: (job: Job) => Promise<void>;
 }
@@ -127,11 +130,49 @@ function normalizeSelectedFrames(manifest: Manifest): FrameRecord[] {
   }));
 }
 
-export function ResultView({ job, manifest, clipModels, deleting, onDelete }: Props) {
+export function ResultView({ job, manifest, clipModels, vlmProfiles, deleting, onDelete }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [frameSet, setFrameSet] = useState<FrameSetKey>("selected");
+  const [vlmQuery, setVlmQuery] = useState("");
+  const [vlmProfile, setVlmProfile] = useState("");
+  const [vlmAnswer, setVlmAnswer] = useState<VlmAnswer | null>(null);
+  const [vlmBusy, setVlmBusy] = useState(false);
+  const [vlmError, setVlmError] = useState("");
 
-  useEffect(() => setFrameSet("selected"), [job?.id]);
+  useEffect(() => {
+    setFrameSet("selected");
+    setVlmQuery(job?.query ?? "");
+    setVlmAnswer(null);
+    setVlmError("");
+  }, [job?.id, job?.query]);
+
+  useEffect(() => {
+    const ready = vlmProfiles.find((profile) => profile.enabled && profile.credentials_ready);
+    setVlmProfile((current) =>
+      vlmProfiles.some((profile) => profile.id === current && profile.enabled)
+        ? current
+        : ready?.id ?? "",
+    );
+  }, [vlmProfiles]);
+
+  useEffect(() => {
+    let active = true;
+    setVlmAnswer(null);
+    setVlmError("");
+    if (job?.status === "succeeded") {
+      api.savedVlmAnswer(job.id, frameSet)
+        .then((answer) => {
+          if (!active) return;
+          setVlmAnswer(answer);
+          if (answer) {
+            setVlmQuery(answer.query);
+            setVlmProfile(answer.profile_id);
+          }
+        })
+        .catch((error: Error) => active && setVlmError(error.message));
+    }
+    return () => { active = false; };
+  }, [job?.id, job?.status, frameSet]);
 
   const frameSets = useMemo(() => {
     if (!manifest) return null;
@@ -168,6 +209,25 @@ export function ResultView({ job, manifest, clipModels, deleting, onDelete }: Pr
     video.pause();
     video.removeAttribute("src");
     video.load();
+  };
+
+  const askVlm = async () => {
+    if (!job || !vlmQuery.trim() || !vlmProfile) return;
+    setVlmBusy(true);
+    setVlmError("");
+    try {
+      const answer = await api.createVlmAnswer(
+        job.id,
+        frameSet,
+        vlmQuery.trim(),
+        vlmProfile,
+      );
+      setVlmAnswer(answer);
+    } catch (error) {
+      setVlmError(error instanceof Error ? error.message : "VLM 问答失败");
+    } finally {
+      setVlmBusy(false);
+    }
   };
 
   if (!job) {
@@ -248,6 +308,89 @@ export function ResultView({ job, manifest, clipModels, deleting, onDelete }: Pr
           })}
         </div>
       </div>
+
+      <section className="vlm-panel" aria-labelledby="vlm-title">
+        <div className="vlm-heading">
+          <div>
+            <p className="eyebrow">MULTI-FRAME VLM</p>
+            <h3 id="vlm-title">基于当前帧集合回答 Query</h3>
+          </div>
+          <span>当前使用：{tabs.find((tab) => tab.key === frameSet)?.label}</span>
+        </div>
+        <div className="vlm-fields">
+          <label className="field">
+            <span>VLM 服务</span>
+            <select
+              value={vlmProfile}
+              onChange={(event) => setVlmProfile(event.target.value)}
+              disabled={vlmBusy}
+            >
+              {!vlmProfiles.length && <option value="">没有 VLM 配置</option>}
+              {vlmProfiles.filter((profile) => profile.enabled).map((profile) => (
+                <option
+                  key={profile.id}
+                  value={profile.id}
+                  disabled={!profile.credentials_ready}
+                >
+                  {profile.name}{profile.credentials_ready ? "" : "（缺少环境变量）"}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field vlm-query-field">
+            <span>VLM Query</span>
+            <textarea
+              rows={3}
+              value={vlmQuery}
+              onChange={(event) => setVlmQuery(event.target.value)}
+              disabled={vlmBusy}
+              placeholder="例如：视频中的人物正在做什么？"
+            />
+          </label>
+        </div>
+        <div className="vlm-submit-row">
+          <p>
+            当前集合共 {activeFrames.length} 帧；服务会按时间顺序读取，并在超过配置上限时均匀缩减。
+          </p>
+          <button
+            className="primary-button vlm-submit"
+            type="button"
+            disabled={vlmBusy || !vlmProfile || !vlmQuery.trim() || activeFrames.length === 0}
+            onClick={() => void askVlm()}
+          >
+            {vlmBusy ? "VLM 正在分析…" : vlmAnswer ? "重新生成回答" : "生成 VLM 回答"}
+          </button>
+        </div>
+        {vlmError && <p className="vlm-error" role="alert">{vlmError}</p>}
+        {vlmAnswer && (
+          <article className="vlm-answer" aria-live="polite">
+            <div className="vlm-answer-meta">
+              <strong>{vlmAnswer.profile_name}</strong>
+              <span>
+                使用 {vlmAnswer.used_frame_count}/{vlmAnswer.source_frame_count} 帧
+                {vlmAnswer.frames_limited ? "（已按时间均匀缩减）" : ""}
+              </span>
+              <time dateTime={vlmAnswer.created_at}>
+                {new Date(vlmAnswer.created_at).toLocaleString()}
+              </time>
+            </div>
+            <p className="vlm-answer-query">“{vlmAnswer.query}”</p>
+            <div className="vlm-answer-text">{vlmAnswer.answer}</div>
+            <div className="vlm-evidence" aria-label="VLM 使用的关键帧">
+              {vlmAnswer.used_frames.map((frame, index) => (
+                <figure key={`${frame.file}-${index}`}>
+                  <img
+                    src={api.mediaUrl(job.id, frame.file)}
+                    alt={`VLM 证据帧 ${index + 1}，时间 ${frame.timestamp_seconds ?? 0} 秒`}
+                    loading="lazy"
+                  />
+                  <figcaption>#{index + 1} · {formatTime(frame.timestamp_seconds ?? 0)}</figcaption>
+                </figure>
+              ))}
+            </div>
+          </article>
+        )}
+      </section>
 
       {activeFrames.length ? (
         <div className="frame-grid">

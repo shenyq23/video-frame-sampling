@@ -130,6 +130,26 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .frame-tabs button span { min-width: 19px; padding: 2px 5px; border-radius: 999px; color: inherit; background: var(--surface); font-size: 10px; text-align: center; }
 .frame-tabs button.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .frame-tabs button:disabled { opacity: 0.42; cursor: not-allowed; }
+.vlm-panel { margin: 18px 0 28px; padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow); }
+.vlm-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 17px; }
+.vlm-heading h3 { margin: 4px 0 0; font-family: Georgia, serif; font-size: 20px; font-weight: 500; }
+.vlm-heading > span { color: var(--muted); font-size: 11px; }
+.vlm-fields { display: grid; grid-template-columns: minmax(180px, 0.35fr) minmax(260px, 1fr); gap: 12px; }
+.vlm-fields .field { margin-bottom: 0; }
+.vlm-query-field textarea { min-height: 86px; }
+.vlm-submit-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 15px; }
+.vlm-submit-row p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.primary-button.vlm-submit { width: auto; flex: none; margin-top: 0; }
+.vlm-error { margin: 14px 0 0; color: var(--danger); font-size: 12px; }
+.vlm-answer { margin-top: 18px; padding-top: 17px; border-top: 1px solid var(--line); }
+.vlm-answer-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px 14px; color: var(--muted); font-size: 11px; }
+.vlm-answer-meta strong { color: var(--ink); font-size: 12px; }
+.vlm-answer-query { margin: 13px 0 8px; color: var(--muted); font-family: Georgia, serif; }
+.vlm-answer-text { white-space: pre-wrap; color: var(--ink); font-size: 14px; line-height: 1.75; }
+.vlm-evidence { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.vlm-evidence figure { width: 92px; margin: 0; }
+.vlm-evidence img { width: 92px; height: 52px; display: block; object-fit: cover; border-radius: 6px; background: var(--line); }
+.vlm-evidence figcaption { margin-top: 4px; color: var(--muted); font-size: 10px; text-align: center; }
 .frame-set-empty { padding: 32px 0; color: var(--muted); text-align: center; font-size: 13px; }
 .frame-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 17px; }
 .frame-card { min-width: 0; overflow: hidden; padding: 0; text-align: left; border: 1px solid var(--line); border-radius: 11px; color: var(--ink); background: var(--surface); box-shadow: 0 8px 28px rgba(23, 42, 33, 0.06); }
@@ -155,6 +175,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .result-title { display: grid; }.secondary-button { width: fit-content; }
   .result-actions { justify-content: start; }
   .parameter-heading, .frame-set-toolbar { align-items: start; flex-direction: column; }
+  .vlm-heading, .vlm-submit-row { align-items: start; flex-direction: column; }
+  .vlm-fields { grid-template-columns: 1fr; }
+  .primary-button.vlm-submit { width: 100%; }
   .parameter-grid { grid-template-columns: 1fr 1fr; }
   .summary-grid { grid-template-columns: 1fr; }.summary-grid > div { border-right: 0; border-bottom: 1px solid var(--line); }.summary-grid > div:last-child { border-bottom: 0; }
   .chart-heading, .frames-heading { align-items: start; flex-direction: column; gap: 4px; }

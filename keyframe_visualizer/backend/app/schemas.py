@@ -82,3 +82,40 @@ class AlgorithmMetadata(BaseModel):
     name: str
     description: str
     parameter_schema: dict[str, Any]
+
+
+class VlmAnswerRequest(BaseModel):
+    frame_set: Literal["selected", "uniform", "candidates"] = "selected"
+    query: str = Field(min_length=1, max_length=8000)
+    vlm_profile: str = Field(min_length=1, max_length=128)
+
+    @field_validator("query", "vlm_profile")
+    @classmethod
+    def validate_non_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("value cannot be blank")
+        return value.strip()
+
+
+class VlmUsedFrame(BaseModel):
+    order: Optional[int] = None
+    file: str
+    timestamp_seconds: Optional[float] = None
+    original_frame_index: Optional[int] = None
+    candidate_order: Optional[int] = None
+
+
+class VlmAnswerResult(BaseModel):
+    schema_version: str
+    job_id: str
+    created_at: datetime
+    profile_id: str
+    profile_name: str
+    frame_set: Literal["selected", "uniform", "candidates"]
+    frame_set_name: str
+    query: str
+    answer: str
+    source_frame_count: int
+    used_frame_count: int
+    frames_limited: bool
+    used_frames: list[VlmUsedFrame]
