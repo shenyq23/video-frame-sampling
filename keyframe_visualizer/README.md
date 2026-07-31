@@ -19,7 +19,7 @@
 
 ```bash
 cd keyframe_visualizer/backend
-python3 -m pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 安装前端依赖：
@@ -35,17 +35,27 @@ npm install
 
 ```bash
 ./keyframe_visualizer/scripts/start_backend.sh
+```
+
+```bash
 ./keyframe_visualizer/scripts/start_frontend.sh
 ```
 
-浏览器打开 `http://127.0.0.1:5173`。API 文档位于 `http://127.0.0.1:8000/docs`。
+浏览器打开
+```bash
+http://127.0.0.1:5173
+```
+
+API 文档位于
+```bash
+http://127.0.0.1:8000/docs
+```
 
 ## 候选帧间隔
 
 候选帧模式选择“按时间间隔”后，可以输入任意大于 0 的有限数字，例如 `0.333`、`1.27` 或 `120.5`。视频只能在整数帧位置解码，因此结果页会同时显示请求间隔和按视频 FPS 对齐后的实际间隔。小于单帧时长的输入等价于每帧采样。输入框默认留空，灰色文本仅为示例；必须由用户输入数值，且不提供上下箭头调参。
 
-目标帧数也默认留空，只显示灰色示例。用户必须输入 `1～512` 的整数，输入框不提供
-上下箭头调参。
+目标帧数也默认留空，只显示灰色示例。用户必须输入 `1～512` 的整数，输入框不提供上下箭头调参。
 
 ## Pangu/MEP 密钥配置
 
@@ -64,11 +74,9 @@ MEP_EMBED_APPID=your-mep-app-id
 MEP_EMBED_SECRET_KEY=your-mep-secret-key
 ```
 
-修改后重启后端。网页会显示服务配置是否就绪；缺少密钥的配置无法选择。真实 `.env`
-已被 `.gitignore` 排除，已有 Shell 环境变量优先于 `.env` 中的同名值。
+修改后重启后端。网页会显示服务配置是否就绪；缺少密钥的配置无法选择。真实 `.env` 已被 `.gitignore` 排除，已有 Shell 环境变量优先于 `.env` 中的同名值。
 
-Pangu/MEP 的服务地址和非敏感参数仍放在 `config/feature_models.json`。如果暂时不希望
-在网页中显示某个服务，可以把对应 profile 的 `enabled` 改为 `false`。
+Pangu/MEP 的服务地址和非敏感参数仍放在 `config/feature_models.json`。如果暂时不希望在网页中显示某个服务，可以把对应 profile 的 `enabled` 改为 `false`。
 
 ## CLIP 模型
 
@@ -78,14 +86,10 @@ CLIP 支持三种来源：
 - 后端机器可访问的绝对目录；
 - 网页上传的离线模型压缩包。
 
-上传时选择 ZIP、TAR、TAR.GZ 或 TGZ 文件。压缩包中必须只有一个 Hugging Face CLIP
-模型，且至少包含 `config.json`、`preprocessor_config.json` 和 `.safetensors` 或
-`.bin` 权重，以及 `tokenizer.json` 或 `vocab.json + merges.txt`。后端会拒绝路径穿越、
-链接、特殊文件、不完整模型和超过限制的压缩包。
+上传时选择 ZIP、TAR、TAR.GZ 或 TGZ 文件。压缩包中必须只有一个 Hugging Face CLIP 模型，且至少包含 `config.json`、`preprocessor_config.json` 和 `.safetensors` 或 `.bin` 权重，以及 `tokenizer.json` 或 `vocab.json + merges.txt`。后端会拒绝路径穿越、链接、特殊文件、不完整模型和超过限制的压缩包。
 校验成功后模型保存在 `data/models/clip/<model-id>/`，并自动出现在 CLIP 模型下拉框。
 
-如果前后端运行在同一台机器，不上传也可以直接填写模型绝对路径。前后端位于不同
-机器时，浏览器本机路径对后端无效，应使用压缩包上传。
+如果前后端运行在同一台机器，不上传也可以直接填写模型绝对路径。前后端位于不同机器时，浏览器本机路径对后端无效，应使用压缩包上传。
 
 ## 结果 Manifest
 
@@ -97,23 +101,13 @@ CLIP 支持三种来源：
 - `rank_in_segment`：该候选帧在所属 segment 中的分数排名；
 - 全部候选帧的紧凑分数序列，用于绘制相关性曲线。
 
-新任务默认额外保存同数量均匀抽帧和全部候选帧，分别写入 `uniform_frames/` 和
-`candidate_frames/`。详情页可以在三组结果之间切换。高级参数中可以关闭任一额外
-输出以节省磁盘空间；关闭后对应详情页按钮不可用。此设置等价于命令行入口的
-`--save-uniform-baseline` 和 `--save-candidate-frames`。
+新任务默认额外保存同数量均匀抽帧和全部候选帧，分别写入 `uniform_frames/` 和 `candidate_frames/`。详情页可以在三组结果之间切换。高级参数中可以关闭任一额外输出以节省磁盘空间；关闭后对应详情页按钮不可用。此设置等价于命令行入口的 `--save-uniform-baseline` 和 `--save-candidate-frames`。
 
-详情页同时展示任务创建时保存的完整参数快照，包括特征后端、模型或服务 profile、
-AKS 模式、候选采样、阈值、深度、设备和导出选项。同一视频和 query 的不同运行可以
-据此区分。旧任务不会自动补生成均匀帧和候选帧，需要重新运行后才能切换查看。
+详情页同时展示任务创建时保存的完整参数快照，包括特征后端、模型或服务 profile、AKS 模式、候选采样、阈值、深度、设备和导出选项。同一视频和 query 的不同运行可以据此区分。旧任务不会自动补生成均匀帧和候选帧，需要重新运行后才能切换查看。
 
-成功或失败任务的详情页提供“清除任务及数据”按钮。确认后会删除该任务上传的原视频、
-`data/runs/<job-id>/` 下的所有帧、manifest 和中间结果，并删除 SQLite 中的任务记录。
-操作不可恢复。排队中或运行中的任务不能清除，以避免后台写入和删除发生竞争。上传的
-CLIP 模型属于多个任务可复用的共享资源，不会随单个任务一起删除。
+成功或失败任务的详情页提供“清除任务及数据”按钮。确认后会删除该任务上传的原视频、`data/runs/<job-id>/` 下的所有帧、manifest 和中间结果，并删除 SQLite 中的任务记录。操作不可恢复。排队中或运行中的任务不能清除，以避免后台写入和删除发生竞争。上传的 CLIP 模型属于多个任务可复用的共享资源，不会随单个任务一起删除。
 
-在 Windows 上，前端会先卸载详情页并终止视频请求，再调用删除接口；后端还会对
-WinError 32 文件占用进行短暂重试。如果视频同时被其他浏览器标签页或外部播放器打开，
-接口会返回明确的 `423 Locked`，关闭占用程序后可直接再次点击清除。
+在 Windows 上，前端会先卸载详情页并终止视频请求，再调用删除接口；后端还会对 WinError 32 文件占用进行短暂重试。如果视频同时被其他浏览器标签页或外部播放器打开，接口会返回明确的 `423 Locked`，关闭占用程序后可直接再次点击清除。
 
 无论任务成功或失败，任务 worker 都会在写入最终状态前显式释放 Decord/OpenCV 的视频解码器句柄，因此失败任务也可以直接从详情页清除。
 
@@ -126,23 +120,19 @@ MEP_VLM_APPID=your-vlm-app-id
 MEP_VLM_SECRET_KEY=your-vlm-secret-key
 ```
 
-然后根据实际环境修改 `config/vlm_models.json` 中的 `elb`、`b_id` 和 `flow_id`。重启后端，
-网页会在成功任务详情页显示“基于当前帧集合回答 Query”区域。可以在以下三种输入之间切换：
+然后根据实际环境修改 `config/vlm_models.json` 中的 `elb`、`b_id` 和 `flow_id`。重启后端，网页会在成功任务详情页显示“基于当前帧集合回答 Query”区域。可以在以下三种输入之间切换：
 
 - AKS 抽出帧；
 - 同数量均匀抽帧；
 - 所有候选帧。
 
-Query 默认使用抽帧任务的 Query，也可以在详情页重新输入。点击“生成 VLM 回答”后，后端
-会从当前任务的 Manifest 读取图片，按视频时间顺序组成多图请求，并把回答保存到：
+Query 默认使用抽帧任务的 Query，也可以在详情页重新输入。点击“生成 VLM 回答”后，后端会从当前任务的 Manifest 读取图片，按视频时间顺序组成多图请求，并把回答保存到：
 
 ```text
 data/runs/<job-id>/vlm_results/<frame-set>.json
 ```
 
-回答区域会展示使用的帧数量、是否因服务的 `max_frames` 限制而均匀缩减，以及实际发送给
-VLM 的证据帧和时间戳。服务配置中的 `max_image_dimension`、`jpeg_quality` 和 `max_frames`
-可以用来控制请求体大小。认证信息只从后端环境变量读取，不会进入网页、SQLite 或 Manifest。
+回答区域会展示使用的帧数量、是否因服务的 `max_frames` 限制而均匀缩减，以及实际发送给 VLM 的证据帧和时间戳。服务配置中的 `max_image_dimension`、`jpeg_quality` 和 `max_frames` 可以用来控制请求体大小。认证信息只从后端环境变量读取，不会进入网页、SQLite 或 Manifest。
 
 如果服务配置缺少环境变量，网页会将该配置标记为不可用；补齐 `.env` 后必须重启后端。
 
@@ -150,7 +140,7 @@ VLM 的证据帧和时间戳。服务配置中的 `max_image_dimension`、`jpeg_
 
 ```bash
 cd keyframe_visualizer/backend
-python3 -m unittest discover -s tests -v
+python -m unittest discover -s tests -v
 
 cd ../frontend
 npm run build
