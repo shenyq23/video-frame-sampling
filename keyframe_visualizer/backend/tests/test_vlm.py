@@ -79,10 +79,19 @@ class VlmAnswerServiceTests(unittest.TestCase):
             )
             request_data = execute.call_args.args[0]
             content = request_data["messages"][1]["content"]
+            user_text = "\n".join(
+                item["text"] for item in content if item["type"] == "text"
+            )
+            self.assertNotIn("关键帧", user_text)
+            self.assertNotIn("抽帧", user_text)
+            self.assertNotIn("候选帧", user_text)
+            self.assertIn("直接回答用户问题", user_text)
+            system_prompt = request_data["messages"][0]["content"]
+            self.assertIn("不要提及", system_prompt)
+            self.assertIn("只输出最终答案", system_prompt)
             images = [item for item in content if item["type"] == "image_url"]
             self.assertEqual(len(images), 3)
             self.assertTrue(images[0]["image_url"]["url"].startswith("data:image/jpeg;base64,"))
             saved = VlmAnswerService().saved_answer(output_dir, "selected")
             self.assertIsNotNone(saved)
             self.assertEqual(saved["answer"], "测试回答")
-

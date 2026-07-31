@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.storage import JobStore
+from app.storage import JobStore, SessionStore
 
 
 class StorageTests(unittest.TestCase):
@@ -49,3 +49,36 @@ class StorageTests(unittest.TestCase):
             self.assertTrue(store.delete("job-1"))
             self.assertIsNone(store.get_raw("job-1"))
             self.assertFalse(store.delete("job-1"))
+
+    def test_session_lifecycle(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            tmp_path = Path(directory)
+            store = SessionStore(tmp_path / "sessions.db")
+            store.create(
+                session_id="session-1",
+                algorithm="aks",
+                config={"parameters": {"feature_backend": "clip", "sample_interval": 1.0}},
+                video_path=tmp_path / "video.mp4",
+                original_filename="video.mp4",
+                session_dir=tmp_path / "session",
+                cache_dir=tmp_path / "session" / "preprocess",
+            )
+            queued = store.get_raw("session-1")
+            self.assertIsNotNone(queued)
+            self.assertEqual(queued["status"], "queued")  # type: ignore[index]
+            self.assertEqual(store.pending_ids(), ["session-1"])
+
+            metadata = tmp_path / "session" / "preprocess" / "metadata.json"
+            store.update(
+                "session-1",
+                status="succeeded",
+                stage="ready",
+                progress=1.0,
+                metadata_path=str(metadata),
+                candidate_count=12,
+            )
+            complete = store.to_record(store.get_raw("session-1"))  # type: ignore[arg-type]
+            self.assertEqual(complete.status, "succeeded")
+            self.assertEqual(complete.candidate_count, 12)
+            self.assertEqual(store.pending_ids(), [])
+            self.assertTrue(store.delete("session-1"))

@@ -6,6 +6,7 @@ import type {
   Job,
   Manifest,
   RunParameters,
+  Session,
   VlmAnswer,
   VlmProfile,
 } from "../types";
@@ -13,6 +14,7 @@ import { ScoreChart } from "./ScoreChart";
 
 interface Props {
   job: Job | null;
+  currentSession: Session | null;
   manifest: Manifest | null;
   clipModels: ClipModel[];
   vlmProfiles: VlmProfile[];
@@ -130,7 +132,7 @@ function normalizeSelectedFrames(manifest: Manifest): FrameRecord[] {
   }));
 }
 
-export function ResultView({ job, manifest, clipModels, vlmProfiles, deleting, onDelete }: Props) {
+export function ResultView({ job, currentSession, manifest, clipModels, vlmProfiles, deleting, onDelete }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [frameSet, setFrameSet] = useState<FrameSetKey>("selected");
   const [vlmQuery, setVlmQuery] = useState("");
@@ -231,6 +233,32 @@ export function ResultView({ job, manifest, clipModels, vlmProfiles, deleting, o
   };
 
   if (!job) {
+    if (currentSession?.status === "succeeded") {
+      return (
+        <section className="empty-state">
+          <div className="empty-orbit" />
+          <h2>视频已准备完成</h2>
+          <p>候选帧和特征已经缓存好了。现在可以在左侧连续输入 query，每次都会直接复用同一个视频会话。</p>
+        </section>
+      );
+    }
+    if (currentSession?.status === "running" || currentSession?.status === "queued") {
+      return (
+        <section className="job-detail-state">
+          <div className="job-state">
+            <div className={`state-icon state-${currentSession.status}`}>
+              <span>{Math.round(currentSession.progress * 100)}</span>
+              <small>%</small>
+            </div>
+            <p className="eyebrow">VIDEO SESSION</p>
+            <h2>{currentSession.stage}</h2>
+            <p className="state-query">“{currentSession.original_filename}”</p>
+            <p>候选帧和特征正在缓存，完成后就可以开始连续提问。</p>
+            <div className="large-progress"><i style={{ width: `${currentSession.progress * 100}%` }} /></div>
+          </div>
+        </section>
+      );
+    }
     return <section className="empty-state"><div className="empty-orbit" /><h2>等待一次运行</h2><p>上传视频并设置 query，结果会在这里沿时间线展开。</p></section>;
   }
 

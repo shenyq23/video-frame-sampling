@@ -20,9 +20,10 @@ FRAME_SET_NAMES = {
     "candidates": "候选帧",
 }
 
-SYSTEM_PROMPT = """你是一名视频问答助手。你会收到按照视频时间顺序排列的若干关键帧，以及每帧的时间戳。
-请仅依据这些图片回答用户问题，不要把未展示的内容当作事实。如果现有帧不足以回答，请明确说明证据不足。
-回答应简洁、准确；需要引用画面依据时，请标注对应的关键帧编号和视频时间戳。"""
+SYSTEM_PROMPT = """你是一名视频问答助手。请综合按照视频时间顺序提供的视觉信息，直接、自然地回答用户问题。
+只输出最终答案，不要描述分析过程，不要提及“关键帧”“抽帧”“图片”“画面编号”“输入内容”或你获取信息的方式。
+不要把未观察到的内容当作事实；如果现有视觉信息不足以回答，请简洁说明无法确定，不要猜测。
+除非用户明确要求提供时间依据，否则不要主动引用画面编号或时间戳。"""
 
 
 class VlmAnswerService:
@@ -49,7 +50,6 @@ class VlmAnswerService:
             output_dir=output_dir,
             frames=used_frames,
             query=query,
-            frame_set=frame_set,
             max_dimension=max(64, int(config.get("max_image_dimension", 1280))),
             jpeg_quality=min(100, max(1, int(config.get("jpeg_quality", 85)))),
         )
@@ -165,7 +165,6 @@ class VlmAnswerService:
         output_dir: Path,
         frames: list[dict[str, Any]],
         query: str,
-        frame_set: str,
         max_dimension: int,
         jpeg_quality: int,
     ) -> list[dict[str, Any]]:
@@ -174,7 +173,8 @@ class VlmAnswerService:
                 "type": "text",
                 "text": (
                     f"用户问题：{query}\n"
-                    f"以下是{FRAME_SET_NAMES[frame_set]}，已按视频时间顺序排列，共 {len(frames)} 张。"
+                    "接下来是来自同一视频、按照时间顺序排列的视觉信息。"
+                    "请综合判断并直接回答用户问题。"
                 ),
             }
         ]
@@ -187,7 +187,7 @@ class VlmAnswerService:
             content.append(
                 {
                     "type": "text",
-                    "text": f"关键帧 {index}｜视频时间 {timestamp:.3f} 秒",
+                    "text": f"视频时间：{timestamp:.3f} 秒",
                 }
             )
             content.append(

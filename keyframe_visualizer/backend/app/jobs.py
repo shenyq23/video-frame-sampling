@@ -7,14 +7,20 @@ from pathlib import Path
 from typing import Optional
 
 from .algorithms.registry import AlgorithmRegistry
-from .storage import JobStore
+from .storage import JobStore, SessionStore
 from .video_reader import release_video
 
 
 class JobManager:
-    def __init__(self, store: JobStore, registry: AlgorithmRegistry):
+    def __init__(
+        self,
+        store: JobStore,
+        registry: AlgorithmRegistry,
+        session_store: SessionStore | None = None,
+    ):
         self.store = store
         self.registry = registry
+        self.session_store = session_store
         self.queue: Optional[asyncio.Queue] = None
         self.worker: Optional[asyncio.Task] = None
 
@@ -63,15 +69,37 @@ class JobManager:
             def progress(stage: str, value: float) -> None:
                 self.store.update(job_id, stage=stage, progress=max(0, min(1, value)))
 
-            manifest_path = adapter.run(
-                job_id=job_id,
-                video_path=video_path,
-                original_filename=row["original_filename"],
-                query=row["query"],
-                parameters=config["parameters"],
-                output_dir=Path(row["output_dir"]),
-                progress=progress,
-            )
+            session_id = row.get("session_id")
+            if session_id:
+                if self.session_store is None:
+                    raise RuntimeError("Session store is not configured")
+                session = self.session_store.get_raw(str(session_id))
+                if not session:
+                    raise RuntimeError("Video session is missing")
+                if session["status"] != "succeeded" or not session.get("metadata_path"):
+                    raise RuntimeError("Video session is not ready")
+                run_from_session = getattr(adapter, "run_from_session", None)
+                if run_from_session is None:
+                    raise RuntimeError(f"{row['algorithm']} does not support video sessions")
+                manifest_path = run_from_session(
+                    job_id=job_id,
+                    session_dir=Path(session["session_dir"]),
+                    metadata_path=Path(session["metadata_path"]),
+                    query=row["query"],
+                    parameters=config["parameters"],
+                    output_dir=Path(row["output_dir"]),
+                    progress=progress,
+                )
+            else:
+                manifest_path = adapter.run(
+                    job_id=job_id,
+                    video_path=video_path,
+                    original_filename=row["original_filename"],
+                    query=row["query"],
+                    parameters=config["parameters"],
+                    output_dir=Path(row["output_dir"]),
+                    progress=progress,
+                )
             release_video(video_path)
             self.store.update(
                 job_id,

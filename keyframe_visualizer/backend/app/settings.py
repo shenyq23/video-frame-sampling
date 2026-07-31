@@ -14,6 +14,7 @@ AKS_ROOT = PROJECT_DIR.parent
 DATA_DIR = PROJECT_DIR / "data"
 UPLOAD_DIR = DATA_DIR / "uploads"
 RUNS_DIR = DATA_DIR / "runs"
+SESSIONS_DIR = DATA_DIR / "sessions"
 DATABASE_PATH = DATA_DIR / "app.db"
 CLIP_MODELS_DIR = DATA_DIR / "models" / "clip"
 FEATURE_MODELS_PATH = PROJECT_DIR / "config" / "feature_models.json"
@@ -26,6 +27,7 @@ load_dotenv(ENV_PATH, override=False)
 def ensure_data_directories() -> None:
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
     CLIP_MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 

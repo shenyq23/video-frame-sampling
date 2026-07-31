@@ -10,9 +10,24 @@ export interface Job {
   algorithm: string;
   query: string;
   original_filename: string;
+  session_id: string | null;
+  owns_video: boolean;
   parameters: Partial<RunParameters>;
   error: string | null;
   manifest_available: boolean;
+}
+
+export interface Session {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  status: JobStatus;
+  stage: string;
+  progress: number;
+  original_filename: string;
+  parameters: Partial<RunParameters>;
+  candidate_count: number;
+  error: string | null;
 }
 
 export interface FeatureProfile {
@@ -75,6 +90,11 @@ export interface AlgorithmMetadata {
     feature_profiles: FeatureProfile[];
     defaults: Record<string, unknown>;
   };
+}
+
+export interface SessionConfig {
+  algorithm: "aks";
+  parameters: RunParameters;
 }
 
 export interface CandidateFrame {

@@ -7,20 +7,42 @@ import unittest
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 import app.main as main_module
 from app.models import ClipModelStore
-from app.storage import JobStore
+from app.storage import JobStore, SessionStore
 
 
 app = main_module.app
 
 
 class ApiTests(unittest.TestCase):
+    @staticmethod
+    def _session_parameters() -> dict:
+        return {
+            "aks_mode": "robust",
+            "max_num_frames": 4,
+            "candidate_sampling": "interval",
+            "sample_interval": 1.0,
+            "feature_backend": "clip",
+            "feature_profile": None,
+            "clip_model_id": None,
+            "model_name": "openai/clip-vit-base-patch32",
+            "device": "cpu",
+            "batch_size": 2,
+            "decode_threads": 1,
+            "threshold": 0.8,
+            "std_threshold": -100.0,
+            "max_depth": 2,
+            "jpeg_quality": 80,
+            "save_uniform_baseline": True,
+            "save_candidate_frames": True,
+        }
+
     @staticmethod
     def _locked_error() -> PermissionError:
         error = PermissionError("file is in use")
@@ -198,6 +220,103 @@ class ApiTests(unittest.TestCase):
             self.assertFalse(video.exists())
             self.assertFalse(output_dir.exists())
             self.assertIsNone(store.get_raw("delete-job"))
+
+    def test_creates_query_job_from_ready_video_session(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.mp4"
+            source.write_bytes(b"video")
+            session_dir = root / "sessions" / "session-1"
+            cache_dir = session_dir / "preprocess"
+            cache_dir.mkdir(parents=True)
+            metadata = cache_dir / "metadata.json"
+            metadata.write_text("{}", encoding="utf-8")
+            store = JobStore(root / "jobs.db")
+            sessions = SessionStore(root / "jobs.db")
+            sessions.create(
+                session_id="session-1",
+                algorithm="aks",
+                config={"parameters": self._session_parameters()},
+                video_path=source,
+                original_filename="source.mp4",
+                session_dir=session_dir,
+                cache_dir=cache_dir,
+            )
+            sessions.update(
+                "session-1",
+                status="succeeded",
+                stage="ready",
+                progress=1.0,
+                metadata_path=str(metadata),
+                candidate_count=3,
+            )
+
+            with patch.object(main_module, "store", store), patch.object(
+                main_module, "session_store", sessions
+            ), patch.object(main_module.manager, "enqueue", AsyncMock()):
+                with TestClient(app) as client:
+                    response = client.post(
+                        "/api/sessions/session-1/jobs",
+                        json={
+                            "algorithm": "aks",
+                            "query": "发生了什么？",
+                            "parameters": self._session_parameters(),
+                        },
+                    )
+
+            self.assertEqual(response.status_code, 202)
+            payload = response.json()
+            self.assertEqual(payload["session_id"], "session-1")
+            self.assertFalse(payload["owns_video"])
+            row = store.get_raw(payload["id"])
+            self.assertEqual(row["video_path"], str(source))  # type: ignore[index]
+
+    def test_session_job_media_can_read_shared_candidate_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            session_dir = root / "sessions" / "session-1"
+            media = session_dir / "preprocess" / "candidate_frames" / "0001.jpg"
+            media.parent.mkdir(parents=True)
+            media.write_bytes(b"image")
+            output_dir = root / "runs" / "job-1"
+            output_dir.mkdir(parents=True)
+            source = session_dir / "source" / "video.mp4"
+            source.parent.mkdir()
+            source.write_bytes(b"video")
+            store = JobStore(root / "jobs.db")
+            sessions = SessionStore(root / "jobs.db")
+            sessions.create(
+                session_id="session-1",
+                algorithm="aks",
+                config={"parameters": self._session_parameters()},
+                video_path=source,
+                original_filename="video.mp4",
+                session_dir=session_dir,
+                cache_dir=session_dir / "preprocess",
+            )
+            sessions.update("session-1", status="succeeded", stage="ready", progress=1.0)
+            store.create(
+                job_id="job-1",
+                algorithm="aks",
+                query="query",
+                config={"parameters": self._session_parameters()},
+                video_path=source,
+                original_filename="video.mp4",
+                output_dir=output_dir,
+                session_id="session-1",
+                owns_video=False,
+            )
+
+            with patch.object(main_module, "store", store), patch.object(
+                main_module, "session_store", sessions
+            ):
+                with TestClient(app) as client:
+                    response = client.get(
+                        "/api/jobs/job-1/media/preprocess/candidate_frames/0001.jpg"
+                    )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.content, b"image")
 
     def test_delete_rejects_non_terminal_job_without_removing_data(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -62,6 +62,24 @@ class CreateJobConfig(BaseModel):
         return value.strip()
 
 
+class CreateSessionConfig(BaseModel):
+    algorithm: Literal["aks"] = "aks"
+    parameters: AKSParameters = Field(default_factory=AKSParameters)
+
+
+class SessionRecord(BaseModel):
+    id: str
+    created_at: datetime
+    updated_at: datetime
+    status: Literal["queued", "running", "succeeded", "failed"]
+    stage: str
+    progress: float
+    original_filename: str
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    candidate_count: int = 0
+    error: Optional[str] = None
+
+
 class JobRecord(BaseModel):
     id: str
     created_at: datetime
@@ -72,6 +90,8 @@ class JobRecord(BaseModel):
     algorithm: str
     query: str
     original_filename: str
+    session_id: Optional[str] = None
+    owns_video: bool = True
     parameters: dict[str, Any] = Field(default_factory=dict)
     error: Optional[str] = None
     manifest_available: bool = False

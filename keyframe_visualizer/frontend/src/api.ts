@@ -4,6 +4,7 @@ import type {
   Job,
   Manifest,
   RunParameters,
+  Session,
   VlmAnswer,
   VlmProfile,
 } from "./types";
@@ -30,10 +31,39 @@ export const api = {
   clipModels: () => checked<ClipModel[]>(fetch(`${API_BASE}/api/models/clip`)),
   vlmProfiles: () =>
     checked<Record<string, VlmProfile>>(fetch(`${API_BASE}/api/settings/vlm-profiles`)),
+  sessions: () => checked<Session[]>(fetch(`${API_BASE}/api/sessions`)),
+  session: (id: string) => checked<Session>(fetch(`${API_BASE}/api/sessions/${id}`)),
   jobs: () => checked<Job[]>(fetch(`${API_BASE}/api/jobs`)),
   job: (id: string) => checked<Job>(fetch(`${API_BASE}/api/jobs/${id}`)),
+  createSession: async (video: File, parameters: RunParameters) => {
+    const body = new FormData();
+    body.append("video", video);
+    body.append("config", JSON.stringify({ algorithm: "aks", parameters }));
+    return checked<Session>(fetch(`${API_BASE}/api/sessions`, { method: "POST", body }));
+  },
+  createSessionJob: (sessionId: string, query: string, parameters: RunParameters) =>
+    checked<Job>(
+      fetch(`${API_BASE}/api/sessions/${sessionId}/jobs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ algorithm: "aks", query, parameters }),
+      }),
+    ),
   deleteJob: async (id: string) => {
     const response = await fetch(`${API_BASE}/api/jobs/${id}`, { method: "DELETE" });
+    if (!response.ok) {
+      let message = `${response.status} ${response.statusText}`;
+      try {
+        const body = await response.json();
+        message = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+      } catch {
+        // Keep the HTTP status for non-JSON failures.
+      }
+      throw new Error(message);
+    }
+  },
+  deleteSession: async (id: string) => {
+    const response = await fetch(`${API_BASE}/api/sessions/${id}`, { method: "DELETE" });
     if (!response.ok) {
       let message = `${response.status} ${response.statusText}`;
       try {
@@ -75,6 +105,7 @@ export const api = {
     return checked<ClipModel>(fetch(`${API_BASE}/api/models/clip`, { method: "POST", body }));
   },
   eventsUrl: (id: string) => `${API_BASE}/api/jobs/${id}/events`,
+  sessionEventsUrl: (id: string) => `${API_BASE}/api/sessions/${id}/events`,
   videoUrl: (id: string) => `${API_BASE}/api/jobs/${id}/video`,
   mediaUrl: (id: string, path: string) =>
     `${API_BASE}/api/jobs/${id}/media/${path.split("/").map(encodeURIComponent).join("/")}`,
