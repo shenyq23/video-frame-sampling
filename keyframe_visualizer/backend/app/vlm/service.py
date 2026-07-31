@@ -6,7 +6,7 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 from PIL import Image
 
@@ -36,6 +36,7 @@ class VlmAnswerService:
         frame_set: str,
         query: str,
         profile_id: str,
+        media_roots: Sequence[Path] | None = None,
     ) -> dict[str, Any]:
         profile = self._profile(profile_id)
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -48,6 +49,7 @@ class VlmAnswerService:
         used_frames = self._limit_frames(frames, max_frames)
         content = self._build_content(
             output_dir=output_dir,
+            media_roots=media_roots,
             frames=used_frames,
             query=query,
             max_dimension=max(64, int(config.get("max_image_dimension", 1280))),
@@ -163,6 +165,7 @@ class VlmAnswerService:
         self,
         *,
         output_dir: Path,
+        media_roots: Sequence[Path] | None = None,
         frames: list[dict[str, Any]],
         query: str,
         max_dimension: int,
@@ -178,10 +181,10 @@ class VlmAnswerService:
                 ),
             }
         ]
-        resolved_output = output_dir.resolve()
+        roots = [output_dir, *(media_roots or [])]
         for index, frame in enumerate(frames, 1):
-            image_path = (output_dir / str(frame["file"])).resolve()
-            if resolved_output not in image_path.parents or not image_path.is_file():
+            image_path = self._resolve_frame_path(roots, str(frame["file"]))
+            if image_path is None:
                 raise VlmRequestError(f"关键帧文件不存在或路径非法：{frame['file']}")
             timestamp = float(frame.get("timestamp_seconds", 0))
             content.append(
@@ -201,6 +204,18 @@ class VlmAnswerService:
                 }
             )
         return content
+
+    @staticmethod
+    def _resolve_frame_path(roots: Sequence[Path], relative_path: str) -> Path | None:
+        for root in roots:
+            resolved_root = root.resolve()
+            image_path = (root / relative_path).resolve()
+            if (
+                (resolved_root in image_path.parents or image_path == resolved_root)
+                and image_path.is_file()
+            ):
+                return image_path
+        return None
 
     @staticmethod
     def _image_data_url(path: Path, *, max_dimension: int, jpeg_quality: int) -> str:

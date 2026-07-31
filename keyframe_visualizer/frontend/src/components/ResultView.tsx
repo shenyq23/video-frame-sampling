@@ -100,9 +100,12 @@ function DeleteTaskButton({
 }) {
   if (job.status !== "succeeded" && job.status !== "failed") return null;
   const confirmDelete = () => {
+    const title = job.owns_video ? "彻底清除任务" : "删除这条 query 记录";
+    const body = job.owns_video
+      ? "上传视频、所有抽帧图片、manifest、中间结果和任务记录都会被永久删除，且无法恢复。"
+      : "只会删除这条 query 的抽帧结果、manifest 和 VLM 回答，不会删除视频预处理缓存。";
     const confirmed = window.confirm(
-      `确定彻底清除任务“${job.original_filename}”吗？\n\n` +
-        "上传视频、所有抽帧图片、manifest、中间结果和任务记录都会被永久删除，且无法恢复。",
+      `确定${title}“${job.query}”吗？\n\n${body}`,
     );
     if (confirmed) {
       beforeDelete?.();
@@ -116,7 +119,7 @@ function DeleteTaskButton({
       disabled={deleting}
       onClick={confirmDelete}
     >
-      {deleting ? "正在清除…" : "清除任务及数据"}
+      {deleting ? "正在删除…" : job.owns_video ? "清除任务及数据" : "删除 query 记录"}
     </button>
   );
 }

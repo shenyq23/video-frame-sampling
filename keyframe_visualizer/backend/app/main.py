@@ -508,6 +508,11 @@ def create_vlm_answer(job_id: str, request: VlmAnswerRequest) -> VlmAnswerResult
     manifest_path = Path(row["manifest_path"])
     if not manifest_path.is_file():
         raise HTTPException(status_code=404, detail="Manifest file is missing")
+    media_roots: list[Path] = []
+    if row.get("session_id"):
+        session = session_store.get_raw(str(row["session_id"]))
+        if session:
+            media_roots.append(Path(session["session_dir"]))
     try:
         result = vlm_answers.answer(
             job_id=job_id,
@@ -516,6 +521,7 @@ def create_vlm_answer(job_id: str, request: VlmAnswerRequest) -> VlmAnswerResult
             frame_set=request.frame_set,
             query=request.query,
             profile_id=request.vlm_profile,
+            media_roots=media_roots,
         )
     except VlmRequestError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error

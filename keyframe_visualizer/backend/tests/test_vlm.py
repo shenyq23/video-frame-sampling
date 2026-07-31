@@ -95,3 +95,64 @@ class VlmAnswerServiceTests(unittest.TestCase):
             saved = VlmAnswerService().saved_answer(output_dir, "selected")
             self.assertIsNotNone(saved)
             self.assertEqual(saved["answer"], "测试回答")
+
+    def test_vlm_can_read_frames_from_session_media_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output_dir = root / "run"
+            output_dir.mkdir()
+            session_dir = root / "session"
+            frame_dir = session_dir / "preprocess" / "candidate_frames"
+            frame_dir.mkdir(parents=True)
+            Image.new("RGB", (64, 48), color=(20, 40, 80)).save(frame_dir / "0001.jpg")
+            manifest_path = output_dir / "manifest.json"
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "frame_sets": {
+                            "selected": {
+                                "frames": [
+                                    {
+                                        "order": 1,
+                                        "file": "preprocess/candidate_frames/0001.jpg",
+                                        "timestamp_seconds": 0.0,
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            profiles = {
+                "test-vlm": {
+                    "name": "Test VLM",
+                    "backend": "mep",
+                    "enabled": True,
+                    "config": {
+                        "elb": "http://example.test/service",
+                        "appid_env": "TEST_VLM_APPID",
+                        "secret_key_env": "TEST_VLM_SECRET",
+                        "b_id": "test",
+                        "flow_id": "test",
+                    },
+                }
+            }
+            environment = {"TEST_VLM_APPID": "appid", "TEST_VLM_SECRET": "secret"}
+            with patch.dict(os.environ, environment, clear=False), patch(
+                "app.vlm.service.load_vlm_profiles", return_value=profiles
+            ), patch(
+                "app.vlm.service.MepVlmClient.execute", return_value="测试回答"
+            ):
+                result = VlmAnswerService().answer(
+                    job_id="job-1",
+                    output_dir=output_dir,
+                    media_roots=[session_dir],
+                    manifest_path=manifest_path,
+                    frame_set="selected",
+                    query="发生了什么？",
+                    profile_id="test-vlm",
+                )
+
+            self.assertEqual(result["answer"], "测试回答")
+            self.assertEqual(result["used_frame_count"], 1)

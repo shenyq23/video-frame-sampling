@@ -1,43 +1,67 @@
-import type { Job } from "../types";
+import { useMemo } from "react";
+import type { Job, Session } from "../types";
 
 interface Props {
+  sessions: Session[];
   jobs: Job[];
-  selectedId: string | null;
-  onSelect: (job: Job) => void;
+  selectedSessionId: string | null;
+  onSelect: (session: Session) => void;
 }
 
-const labels: Record<Job["status"], string> = {
+const labels: Record<Session["status"], string> = {
   queued: "排队中",
-  running: "运行中",
-  succeeded: "已完成",
+  running: "预处理中",
+  succeeded: "已准备",
   failed: "失败",
 };
 
-export function RunList({ jobs, selectedId, onSelect }: Props) {
+export function RunList({ sessions, jobs, selectedSessionId, onSelect }: Props) {
+  const queryCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const job of jobs) {
+      if (!job.session_id) continue;
+      counts.set(job.session_id, (counts.get(job.session_id) ?? 0) + 1);
+    }
+    return counts;
+  }, [jobs]);
+
   return (
     <section className="run-list">
       <div className="section-heading compact-heading">
         <div>
-          <p className="eyebrow">RUN HISTORY</p>
-          <h2>运行记录</h2>
+          <p className="eyebrow">VIDEO HISTORY</p>
+          <h2>视频记录</h2>
         </div>
-        <span className="count-label">{jobs.length}</span>
+        <span className="count-label">{sessions.length}</span>
       </div>
-      {jobs.length === 0 ? (
-        <p className="empty-copy">还没有任务。提交第一个视频后，运行记录会保存在这里。</p>
+      {sessions.length === 0 ? (
+        <p className="empty-copy">还没有视频会话。先准备一个视频，后续 query 会归到这个视频下面。</p>
       ) : (
         <div className="run-items">
-          {jobs.map((job) => (
-            <button key={job.id} className={`run-item ${selectedId === job.id ? "selected" : ""}`} onClick={() => onSelect(job)}>
-              <span className="run-item-top"><strong>{job.original_filename}</strong><span className={`status status-${job.status}`}>{labels[job.status]}</span></span>
-              <span className="run-query">{job.query}</span>
-              <span className="run-progress"><i style={{ width: `${Math.round(job.progress * 100)}%` }} /></span>
-              <span className="run-meta">{job.stage} · {Math.round(job.progress * 100)}%</span>
-            </button>
-          ))}
+          {sessions.map((session) => {
+            const queryCount = queryCounts.get(session.id) ?? 0;
+            return (
+              <button
+                key={session.id}
+                className={`run-item ${selectedSessionId === session.id ? "selected" : ""}`}
+                onClick={() => onSelect(session)}
+              >
+                <span className="run-item-top">
+                  <strong>{session.original_filename}</strong>
+                  <span className={`status status-${session.status}`}>{labels[session.status]}</span>
+                </span>
+                <span className="run-query">
+                  {queryCount} 条 query · {session.candidate_count || "—"} 个候选帧
+                </span>
+                <span className="run-progress">
+                  <i style={{ width: `${Math.round(session.progress * 100)}%` }} />
+                </span>
+                <span className="run-meta">{session.stage} · {Math.round(session.progress * 100)}%</span>
+              </button>
+            );
+          })}
         </div>
       )}
     </section>
   );
 }
-
