@@ -24,6 +24,7 @@ export default function App() {
   const [selected, setSelected] = useState<Job | null>(null);
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [preparingNewSession, setPreparingNewSession] = useState(false);
   const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Job | null>(null);
@@ -115,6 +116,7 @@ export default function App() {
       setCurrentSession(session);
       setSelected(null);
       setManifest(null);
+      setPreparingNewSession(false);
     } catch (error) {
       setGlobalError(error instanceof Error ? error.message : "提交视频预处理失败");
     } finally {
@@ -125,7 +127,7 @@ export default function App() {
   const runSessionQuery = async (query: string, parameters: RunParameters) => {
     if (!currentSession || currentSession.status !== "succeeded") {
       setGlobalError("请先等待视频预处理完成");
-      return;
+      return false;
     }
     setSubmitting(true);
     setGlobalError("");
@@ -134,8 +136,10 @@ export default function App() {
       setJobs((current) => [job, ...current]);
       setSelected(job);
       setManifest(null);
+      return true;
     } catch (error) {
       setGlobalError(error instanceof Error ? error.message : "提交 query 任务失败");
+      return false;
     } finally {
       setSubmitting(false);
     }
@@ -212,12 +216,14 @@ export default function App() {
   };
 
   const selectSession = (session: Session) => {
+    setPreparingNewSession(false);
     setCurrentSession(session);
     setSelected(latestJobForSession(jobs, session.id));
     setManifest(null);
   };
 
   const selectJob = (job: Job) => {
+    setPreparingNewSession(false);
     setSelected(job);
     if (job.session_id) {
       const session = sessions.find((item) => item.id === job.session_id);
@@ -240,20 +246,28 @@ export default function App() {
             algorithm={algorithms.find((item) => item.id === "aks")}
             clipModels={clipModels}
             currentSession={currentSession}
+            preparingNewSession={preparingNewSession}
             busy={submitting}
             onPrepareSession={prepareSession}
             onRunQuery={runSessionQuery}
             onUploadClipModel={uploadClipModel}
+            onPreparingNewSessionChange={setPreparingNewSession}
           />
           <RunList
             sessions={sessions}
             jobs={jobs}
-            selectedSessionId={currentSession?.id ?? null}
+            selectedSessionId={preparingNewSession ? null : currentSession?.id ?? null}
             onSelect={selectSession}
           />
         </aside>
         <div className="result-column">
-          {pendingSessionDelete ? (
+          {preparingNewSession ? (
+            <section className="empty-state">
+              <div className="empty-orbit" />
+              <h2>等待视频上传</h2>
+              <p>请在左侧选择并准备一个新视频。完成预处理后，可以针对它连续输入 query。</p>
+            </section>
+          ) : pendingSessionDelete ? (
             <section className="deleting-state" aria-live="polite">
               <div className="empty-orbit" />
               <h2>正在删除视频会话</h2>

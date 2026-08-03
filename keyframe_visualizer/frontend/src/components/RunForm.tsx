@@ -5,10 +5,12 @@ interface Props {
   algorithm?: AlgorithmMetadata;
   clipModels: ClipModel[];
   currentSession: Session | null;
+  preparingNewSession: boolean;
   busy: boolean;
   onPrepareSession: (video: File, parameters: RunParameters) => Promise<void>;
-  onRunQuery: (query: string, parameters: RunParameters) => Promise<void>;
+  onRunQuery: (query: string, parameters: RunParameters) => Promise<boolean>;
   onUploadClipModel: (archive: File, name: string) => Promise<ClipModel>;
+  onPreparingNewSessionChange: (preparing: boolean) => void;
 }
 
 const defaults: RunParameters = {
@@ -62,10 +64,12 @@ export function RunForm({
   algorithm,
   clipModels,
   currentSession,
+  preparingNewSession,
   busy,
   onPrepareSession,
   onRunQuery,
   onUploadClipModel,
+  onPreparingNewSessionChange,
 }: Props) {
   const [video, setVideo] = useState<File | null>(null);
   const [query, setQuery] = useState("");
@@ -73,7 +77,6 @@ export function RunForm({
   const [sampleIntervalInput, setSampleIntervalInput] = useState("");
   const [parameters, setParameters] = useState<RunParameters>(defaults);
   const [advanced, setAdvanced] = useState(false);
-  const [preparingNewSession, setPreparingNewSession] = useState(false);
   const [error, setError] = useState("");
   const [modelArchive, setModelArchive] = useState<File | null>(null);
   const [modelDisplayName, setModelDisplayName] = useState("");
@@ -89,7 +92,8 @@ export function RunForm({
     setSampleIntervalInput(
       typeof interval === "number" && Number.isFinite(interval) ? String(interval) : "",
     );
-    setPreparingNewSession(false);
+    setQuery("");
+    setError("");
   }, [currentSession?.id]);
 
   const profiles = useMemo(
@@ -165,10 +169,11 @@ export function RunForm({
       }
     }
     setError("");
-    await onRunQuery(query.trim(), {
+    const submitted = await onRunQuery(query.trim(), {
       ...locked,
       max_num_frames: parsedMaxFrames,
     });
+    if (submitted) setQuery("");
   };
 
   const uploadModel = async () => {
@@ -308,7 +313,7 @@ export function RunForm({
         {error && <p className="form-error" role="alert">{error}</p>}
         <button className="primary-button" type="submit" disabled={busy}>{busy ? "正在提交…" : "准备视频"}</button>
         {sessionReady && (
-          <button className="text-button" type="button" onClick={() => setPreparingNewSession(false)}>
+          <button className="text-button" type="button" onClick={() => onPreparingNewSessionChange(false)}>
             返回当前视频
           </button>
         )}
@@ -355,7 +360,11 @@ export function RunForm({
             ? `${currentSession.parameters.sample_interval ?? "—"} 秒`
             : "原仓库 int(FPS)"}
         </small>
-        <button className="text-button" type="button" onClick={() => setPreparingNewSession(true)}>
+        <button className="text-button" type="button" onClick={() => {
+          setQuery("");
+          setError("");
+          onPreparingNewSessionChange(true);
+        }}>
           准备另一个视频
         </button>
       </div>
