@@ -1,5 +1,6 @@
 import type {
   AlgorithmMetadata,
+  AlgorithmId,
   ClipModel,
   Job,
   Manifest,
@@ -7,6 +8,7 @@ import type {
   Session,
   VlmAnswer,
   VlmProfile,
+  ParameterSnapshot,
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
@@ -35,18 +37,29 @@ export const api = {
   session: (id: string) => checked<Session>(fetch(`${API_BASE}/api/sessions/${id}`)),
   jobs: () => checked<Job[]>(fetch(`${API_BASE}/api/jobs`)),
   job: (id: string) => checked<Job>(fetch(`${API_BASE}/api/jobs/${id}`)),
-  createSession: async (video: File, parameters: RunParameters) => {
+  createSession: async (
+    algorithm: AlgorithmId,
+    video: File,
+    parameters: ParameterSnapshot,
+    subtitle?: File | null,
+  ) => {
     const body = new FormData();
     body.append("video", video);
-    body.append("config", JSON.stringify({ algorithm: "aks", parameters }));
+    body.append("config", JSON.stringify({ algorithm, parameters }));
+    if (subtitle) body.append("subtitle", subtitle);
     return checked<Session>(fetch(`${API_BASE}/api/sessions`, { method: "POST", body }));
   },
-  createSessionJob: (sessionId: string, query: string, parameters: RunParameters) =>
+  createSessionJob: (
+    sessionId: string,
+    algorithm: AlgorithmId,
+    query: string,
+    parameters: ParameterSnapshot,
+  ) =>
     checked<Job>(
       fetch(`${API_BASE}/api/sessions/${sessionId}/jobs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ algorithm: "aks", query, parameters }),
+        body: JSON.stringify({ algorithm, query, parameters }),
       }),
     ),
   deleteJob: async (id: string) => {

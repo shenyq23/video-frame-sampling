@@ -1,4 +1,6 @@
 export type JobStatus = "queued" | "running" | "succeeded" | "failed";
+export type AlgorithmId = "aks" | "vsi";
+export type ParameterSnapshot = Record<string, any>;
 
 export interface Job {
   id: string;
@@ -12,7 +14,7 @@ export interface Job {
   original_filename: string;
   session_id: string | null;
   owns_video: boolean;
-  parameters: Partial<RunParameters>;
+  parameters: ParameterSnapshot;
   error: string | null;
   manifest_available: boolean;
 }
@@ -25,7 +27,8 @@ export interface Session {
   stage: string;
   progress: number;
   original_filename: string;
-  parameters: Partial<RunParameters>;
+  algorithm: AlgorithmId;
+  parameters: ParameterSnapshot;
   candidate_count: number;
   error: string | null;
 }
@@ -86,15 +89,19 @@ export interface AlgorithmMetadata {
   id: string;
   name: string;
   description: string;
-  parameter_schema: {
-    feature_profiles: FeatureProfile[];
-    defaults: Record<string, unknown>;
+  parameter_schema: Record<string, unknown> & {
+    feature_profiles?: FeatureProfile[];
+    defaults?: Record<string, unknown>;
+    assets?: Record<string, {
+      label: string;
+      ready: boolean;
+    }>;
   };
 }
 
 export interface SessionConfig {
-  algorithm: "aks";
-  parameters: RunParameters;
+  algorithm: AlgorithmId;
+  parameters: Record<string, unknown>;
 }
 
 export interface CandidateFrame {
@@ -103,20 +110,24 @@ export interface CandidateFrame {
   original_frame_index: number;
   timestamp_seconds: number;
   relevance_score: number;
-  normalized_score: number;
-  selected: boolean;
+  normalized_score?: number;
+  selected?: boolean;
   file?: string;
   order?: number;
   selected_by_aks?: boolean;
+  selected_by_vsi?: boolean;
+  fused_score?: number;
+  sampling_probability?: number;
+  visited_order?: number;
 }
 
 export interface SelectedFrame extends Omit<CandidateFrame, "selected"> {
   selected_order: number;
   file: string;
-  segment_id: number;
-  segment_depth: number | null;
-  segment_quota: number | null;
-  rank_in_segment: number | null;
+  segment_id?: number;
+  segment_depth?: number | null;
+  segment_quota?: number | null;
+  rank_in_segment?: number | null;
 }
 
 export interface FrameRecord {
@@ -127,9 +138,15 @@ export interface FrameRecord {
   timestamp_seconds: number;
   candidate_index: number;
   candidate_order: number;
-  relevance_score: number;
-  normalized_score: number;
-  selected_by_aks: boolean;
+  relevance_score?: number;
+  normalized_score?: number;
+  selected_by_aks?: boolean;
+  selected_by_vsi?: boolean;
+  object_score?: number;
+  text_score?: number;
+  fused_score?: number;
+  sampling_probability?: number;
+  visited_order?: number;
   selected?: boolean;
   segment_id?: number;
   segment_depth?: number | null;
@@ -155,14 +172,14 @@ export interface Manifest {
     total_frames: number;
   };
   query: string;
-  parameters: Record<string, unknown>;
-  candidate_sampling: {
+  parameters: ParameterSnapshot;
+  candidate_sampling?: {
     mode: string;
     interval_seconds: number | null;
     effective_interval_seconds: number | null;
     candidate_count: number;
   };
-  feature_extraction: Record<string, unknown>;
+  feature_extraction?: Record<string, unknown>;
   summary: {
     requested_keyframes: number;
     selected_keyframes: number;
@@ -194,6 +211,26 @@ export interface RunParameters {
   std_threshold: number;
   max_depth: number;
   jpeg_quality: number;
+  save_uniform_baseline: boolean;
+  save_candidate_frames: boolean;
+}
+
+export interface VsiSessionParameters {
+  subtitle_mode: "ocr" | "upload" | "none";
+  ocr_fps: number;
+  ocr_crop_top: number;
+  text_model: string;
+  device: "cuda" | "mps" | "cpu";
+}
+
+export interface VsiQueryParameters extends VsiSessionParameters {
+  objects: string[];
+  top_k: number;
+  detection_budget: number;
+  samples_per_round: number;
+  text_weight: number;
+  model: string;
+  seed: number;
   save_uniform_baseline: boolean;
   save_candidate_frames: boolean;
 }

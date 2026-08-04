@@ -8,6 +8,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -73,13 +74,21 @@ ALLOWED_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v"}
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024 * 1024
 MAX_MODEL_UPLOAD_BYTES = 12 * 1024 * 1024 * 1024
 DELETE_RETRY_DELAYS_SECONDS = (0.15, 0.3, 0.6, 1.0, 1.5)
-PREPROCESS_PARAMETER_KEYS = {
+AKS_PREPROCESS_PARAMETER_KEYS = {
     "candidate_sampling",
     "sample_interval",
     "feature_backend",
     "feature_profile",
     "clip_model_id",
     "model_name",
+    "device",
+}
+VSI_PREPROCESS_PARAMETER_KEYS = {
+    "subtitle_mode",
+    "ocr_fps",
+    "ocr_crop_top",
+    "ocr_confidence",
+    "text_model",
     "device",
 }
 
@@ -155,7 +164,7 @@ def _delete_with_retries(path: Path, *, is_directory: bool, label: str) -> None:
             time.sleep(DELETE_RETRY_DELAYS_SECONDS[attempt])
 
 
-def _validate_session_job_parameters(session: dict, parameters: dict) -> None:
+def _validate_session_job_parameters(session: dict, algorithm: str, parameters: dict) -> None:
     try:
         session_config = json.loads(session.get("config_json") or "{}")
         session_parameters = session_config.get("parameters", {})
@@ -163,9 +172,10 @@ def _validate_session_job_parameters(session: dict, parameters: dict) -> None:
             session_parameters = {}
     except (TypeError, json.JSONDecodeError):
         session_parameters = {}
+    keys = AKS_PREPROCESS_PARAMETER_KEYS if algorithm == "aks" else VSI_PREPROCESS_PARAMETER_KEYS
     mismatched = [
         key
-        for key in sorted(PREPROCESS_PARAMETER_KEYS)
+        for key in sorted(keys)
         if session_parameters.get(key) != parameters.get(key)
     ]
     if mismatched:
@@ -247,6 +257,7 @@ def get_session(session_id: str) -> SessionRecord:
 async def create_session(
     video: UploadFile = File(...),
     config: str = Form(...),
+    subtitle: Optional[UploadFile] = File(None),
 ) -> SessionRecord:
     try:
         parsed_config = CreateSessionConfig.model_validate_json(config)
@@ -256,6 +267,17 @@ async def create_session(
     suffix = Path(video.filename or "video").suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=415, detail=f"Unsupported video type: {suffix or 'unknown'}")
+    if subtitle is not None:
+        subtitle_suffix = Path(subtitle.filename or "").suffix.lower()
+        if subtitle_suffix not in {".srt", ".json"}:
+            raise HTTPException(status_code=415, detail="字幕文件只支持 .srt 或 .json")
+    parameters = parsed_config.parameters.model_dump()
+    if parsed_config.algorithm == "vsi":
+        subtitle_mode = parameters.get("subtitle_mode")
+        if subtitle_mode == "upload" and subtitle is None:
+            raise HTTPException(status_code=422, detail="VSI 上传字幕模式需要提供 .srt 或 .json 文件")
+    elif subtitle is not None:
+        raise HTTPException(status_code=422, detail="只有 VSI 视频会话支持上传字幕文件")
 
     session_id = uuid.uuid4().hex
     session_dir = SESSIONS_DIR / session_id
@@ -275,6 +297,14 @@ async def create_session(
                 destination.write(chunk)
         if size == 0:
             raise HTTPException(status_code=400, detail="Uploaded video is empty")
+        if subtitle is not None:
+            subtitle_name = re.sub(
+                r"[^A-Za-z0-9._-]+", "_", Path(subtitle.filename or "subtitles.json").name
+            )
+            subtitle_path = source_dir / subtitle_name
+            with subtitle_path.open("wb") as destination:
+                while chunk := await subtitle.read(1024 * 1024):
+                    destination.write(chunk)
     except Exception:
         if session_dir.exists():
             shutil.rmtree(session_dir, ignore_errors=True)
@@ -347,8 +377,10 @@ async def create_session_job(session_id: str, parsed_config: CreateJobConfig) ->
     session = _session_or_404(session_id)
     if session["status"] != "succeeded" or not session.get("metadata_path"):
         raise HTTPException(status_code=409, detail="视频还没有预处理完成")
+    if parsed_config.algorithm != session["algorithm"]:
+        raise HTTPException(status_code=409, detail="任务算法与视频会话算法不一致")
     config_dict = parsed_config.model_dump()
-    _validate_session_job_parameters(session, config_dict["parameters"])
+    _validate_session_job_parameters(session, parsed_config.algorithm, config_dict["parameters"])
 
     job_id = uuid.uuid4().hex
     output_dir = RUNS_DIR / job_id

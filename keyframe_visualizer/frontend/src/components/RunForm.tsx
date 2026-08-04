@@ -353,11 +353,11 @@ export function RunForm({
 
       <div className="session-panel">
         <strong>{currentSession.original_filename}</strong>
-        <span>{labelFeatureBackend(currentSession.parameters.feature_backend)} · {sessionModelLabel(currentSession, clipModels)}</span>
+        <span>{labelFeatureBackend(typeof currentSession.parameters.feature_backend === "string" ? currentSession.parameters.feature_backend : undefined)} · {sessionModelLabel(currentSession, clipModels)}</span>
         <small>
           候选采样：
           {currentSession.parameters.candidate_sampling === "interval"
-            ? `${currentSession.parameters.sample_interval ?? "—"} 秒`
+            ? `${String(currentSession.parameters.sample_interval ?? "—")} 秒`
             : "原仓库 int(FPS)"}
         </small>
         <button className="text-button" type="button" onClick={() => {

@@ -1,12 +1,12 @@
 # Keyframe Visualizer
 
-一个独立于现有 AKS 输出目录的可视化工作台。当前接入 AKS，支持上传视频、输入 query、选择 AKS 模式、关键帧预算、候选帧采样间隔和 CLIP/Pangu/MEP 特征后端。
+一个独立于算法仓库输出目录的可视化工作台。当前接入 AKS 和 VSI：左上角可以切换算法；两种算法分别使用自己的视频预处理和 query 参数界面，但共享视频 session、query 历史、帧画廊、任务删除和 VLM 问答能力。
 
 所有运行数据都写入 `keyframe_visualizer/data/`，不会修改 AKS 已有文件或输出。
 
 ## 目录
 
-- `backend/`：FastAPI、SQLite 任务队列和 AKS Adapter。
+- `backend/`：FastAPI、SQLite 任务队列以及 AKS/VSI Adapter。
 - `frontend/`：React + TypeScript 页面。
 - `config/feature_models.json`：服务端 Pangu/MEP 配置档案。
 - `config/vlm_models.json`：服务端 VLM 配置档案（当前支持 MEP VLM）。
@@ -147,3 +147,48 @@ npm run build
 ```
 
 后端启动不要求立即加载 CLIP；只有提交 CLIP 任务时才加载模型。GPU/MPS 模型任务由单 worker 顺序执行，避免并发任务同时占满显存。
+
+## VSI 使用
+
+VSI 源码默认从与 `keyframe_visualizer` 平级的 `VSI_VideoFraming/` 目录加载。旧的 `VSI/` 目录不会再被可视化后端引用。进入网页后，在左上角选择 `VSI`。
+
+准备视频时可以选择：
+
+- 烧录字幕 OCR：上传视频后执行 EasyOCR，并把字幕缓存到视频 session；
+- 上传字幕：支持 `.srt` 和 `.json`；
+- 不使用字幕：仅运行 YOLO-World 视觉分支。
+
+视频准备完成后，每条 query 需要同时输入检测目标 `Objects`，多个目标使用英文逗号分隔。例如：
+
+```text
+Query: 视频中什么时候有人骑马经过道路？
+Objects: person, horse, road
+```
+
+同一个视频的不同 query 可以使用不同 Objects。OCR 或上传字幕只在准备视频时处理一次；YOLO-World 检测和 VSI 自适应采样会针对每条 query 重新执行。
+
+VSI 任务会保存：
+
+- 最终选中的关键帧；
+- 同数量均匀抽帧；
+- YOLO-World 实际访问过的帧；
+- fused score 和 sampling probability；
+- visited frame CSV、可选的全部帧 CSV 和采样历史；
+- 与 AKS 相同格式的 VLM 回答记录。
+
+新版 `VSI_VideoFraming` 已随仓库提供 YOLO-World、CLIP、EasyOCR 和默认 SentenceTransformer 资源。同步代码后先确保 Git LFS 大文件已经拉取：
+
+```bash
+git -C VSI_VideoFraming lfs pull
+```
+
+网页的 VSI 视频准备区会显示四项本地资源状态。默认配置会优先使用：
+
+- `VSI_VideoFraming/yolov8s-worldv2.pt`；
+- `VSI_VideoFraming/weights/clip/ViT-B-32.pt`；
+- `VSI_VideoFraming/output/easyocr_models/`；
+- `VSI_VideoFraming/output/model_cache/huggingface/` 中的字幕文本模型快照。
+
+可视化自身产生的运行缓存仍写入 `keyframe_visualizer/data/models/vsi/`。如果选择自定义 YOLO 或字幕模型名称，相关组件仍可能按照第三方库的行为联网下载；绝对路径形式的自定义 YOLO 权重会在任务启动前检查文件完整性。
+
+当前使用的 `VSI_VideoFraming` 不包含 ASR 接口，网页第一版只支持 OCR、上传字幕和纯视觉模式。

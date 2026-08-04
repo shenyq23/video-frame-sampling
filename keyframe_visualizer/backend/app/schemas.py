@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -49,10 +49,67 @@ class AKSParameters(BaseModel):
         return self
 
 
+class VSIParameters(BaseModel):
+    subtitle_mode: Literal["ocr", "upload", "none"] = "ocr"
+    ocr_fps: float = Field(default=2.0, gt=0, le=10, allow_inf_nan=False)
+    ocr_crop_top: float = Field(default=0.62, ge=0, lt=1, allow_inf_nan=False)
+    ocr_confidence: float = Field(default=0.30, ge=0, le=1, allow_inf_nan=False)
+    text_model: str = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+    device: Literal["cuda", "mps", "cpu"] = "cpu"
+    objects: list[str] = Field(default_factory=list)
+    top_k: int = Field(default=8, ge=1, le=512)
+    detection_budget: int = Field(default=64, ge=1, le=10000)
+    samples_per_round: int = Field(default=16, ge=1, le=10000)
+    text_weight: float = Field(default=0.3, ge=0, le=1, allow_inf_nan=False)
+    model: str = "yolov8s-worldv2.pt"
+    seed: int = 0
+    save_uniform_baseline: bool = True
+    save_candidate_frames: bool = True
+
+    @field_validator("objects", mode="before")
+    @classmethod
+    def parse_objects(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            value = value.split(",")
+        if not isinstance(value, list):
+            raise ValueError("objects must be a list or comma-separated string")
+        result = [str(item).strip() for item in value if str(item).strip()]
+        return list(dict.fromkeys(result))
+
+    @field_validator("text_model", "model")
+    @classmethod
+    def validate_model_name(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("model name cannot be blank")
+        return value.strip()
+
+    @model_validator(mode="after")
+    def validate_budget(self) -> "VSIParameters":
+        if self.samples_per_round > self.detection_budget:
+            raise ValueError("samples_per_round cannot exceed detection_budget")
+        return self
+
+
 class CreateJobConfig(BaseModel):
-    algorithm: Literal["aks"] = "aks"
+    algorithm: Literal["aks", "vsi"] = "aks"
     query: str = Field(min_length=1, max_length=8000)
-    parameters: AKSParameters = Field(default_factory=AKSParameters)
+    parameters: Union[AKSParameters, VSIParameters] = Field(default_factory=AKSParameters)
+
+    @model_validator(mode="before")
+    @classmethod
+    def select_parameter_model(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        raw = data.get("parameters", {})
+        data["parameters"] = (
+            VSIParameters.model_validate(raw)
+            if data.get("algorithm", "aks") == "vsi"
+            else AKSParameters.model_validate(raw)
+        )
+        return data
 
     @field_validator("query")
     @classmethod
@@ -61,10 +118,31 @@ class CreateJobConfig(BaseModel):
             raise ValueError("query cannot be blank")
         return value.strip()
 
+    @model_validator(mode="after")
+    def validate_vsi_query(self) -> "CreateJobConfig":
+        if self.algorithm == "vsi" and isinstance(self.parameters, VSIParameters):
+            if not self.parameters.objects:
+                raise ValueError("VSI query requires at least one object")
+        return self
+
 
 class CreateSessionConfig(BaseModel):
-    algorithm: Literal["aks"] = "aks"
-    parameters: AKSParameters = Field(default_factory=AKSParameters)
+    algorithm: Literal["aks", "vsi"] = "aks"
+    parameters: Union[AKSParameters, VSIParameters] = Field(default_factory=AKSParameters)
+
+    @model_validator(mode="before")
+    @classmethod
+    def select_parameter_model(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        raw = data.get("parameters", {})
+        data["parameters"] = (
+            VSIParameters.model_validate(raw)
+            if data.get("algorithm", "aks") == "vsi"
+            else AKSParameters.model_validate(raw)
+        )
+        return data
 
 
 class SessionRecord(BaseModel):
@@ -74,6 +152,7 @@ class SessionRecord(BaseModel):
     status: Literal["queued", "running", "succeeded", "failed"]
     stage: str
     progress: float
+    algorithm: str
     original_filename: str
     parameters: dict[str, Any] = Field(default_factory=dict)
     candidate_count: int = 0

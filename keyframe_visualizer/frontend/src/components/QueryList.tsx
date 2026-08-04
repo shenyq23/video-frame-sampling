@@ -105,7 +105,7 @@ export function QueryList({
                 <span className={`status status-${job.status}`}>{labels[job.status]}</span>
               </span>
               <span className="run-meta">
-                {job.stage} · {Math.round(job.progress * 100)}% · {job.parameters.max_num_frames ?? "—"} 帧
+                {job.stage} · {Math.round(job.progress * 100)}% · {String(job.parameters.max_num_frames ?? job.parameters.top_k ?? "—")} 帧
               </span>
               <span className="run-progress">
                 <i style={{ width: `${Math.round(job.progress * 100)}%` }} />

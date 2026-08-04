@@ -11,12 +11,19 @@ from dotenv import load_dotenv
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 PROJECT_DIR = BACKEND_DIR.parent
 AKS_ROOT = PROJECT_DIR.parent
+VSI_ROOT = AKS_ROOT / "VSI_VideoFraming"
+VSI_BUNDLED_OUTPUT_DIR = VSI_ROOT / "output"
+VSI_BUNDLED_MODEL_CACHE_DIR = VSI_BUNDLED_OUTPUT_DIR / "model_cache"
+VSI_BUNDLED_EASYOCR_DIR = VSI_BUNDLED_OUTPUT_DIR / "easyocr_models"
+VSI_BUNDLED_YOLO_MODEL = VSI_ROOT / "yolov8s-worldv2.pt"
+VSI_BUNDLED_CLIP_MODEL = VSI_ROOT / "weights" / "clip" / "ViT-B-32.pt"
 DATA_DIR = PROJECT_DIR / "data"
 UPLOAD_DIR = DATA_DIR / "uploads"
 RUNS_DIR = DATA_DIR / "runs"
 SESSIONS_DIR = DATA_DIR / "sessions"
 DATABASE_PATH = DATA_DIR / "app.db"
 CLIP_MODELS_DIR = DATA_DIR / "models" / "clip"
+VSI_MODEL_CACHE_DIR = DATA_DIR / "models" / "vsi"
 FEATURE_MODELS_PATH = PROJECT_DIR / "config" / "feature_models.json"
 VLM_MODELS_PATH = PROJECT_DIR / "config" / "vlm_models.json"
 ENV_PATH = PROJECT_DIR / ".env"
@@ -29,6 +36,7 @@ def ensure_data_directories() -> None:
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
     CLIP_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    VSI_MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def load_feature_profiles() -> dict[str, dict[str, Any]]:

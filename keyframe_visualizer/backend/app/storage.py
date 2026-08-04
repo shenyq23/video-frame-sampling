@@ -300,6 +300,7 @@ class SessionStore:
             status=row["status"],
             stage=row["stage"],
             progress=row["progress"],
+            algorithm=row["algorithm"],
             original_filename=row["original_filename"],
             parameters=parameters,
             candidate_count=int(row.get("candidate_count") or 0),

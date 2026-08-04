@@ -51,7 +51,7 @@ export function RunList({ sessions, jobs, selectedSessionId, onSelect }: Props) 
                   <span className={`status status-${session.status}`}>{labels[session.status]}</span>
                 </span>
                 <span className="run-query">
-                  {queryCount} 条 query · {session.candidate_count || "—"} 个候选帧
+                  {queryCount} 条 query · {session.algorithm === "vsi" ? "VSI session" : `${session.candidate_count || "—"} 个候选帧`}
                 </span>
                 <span className="run-progress">
                   <i style={{ width: `${Math.round(session.progress * 100)}%` }} />

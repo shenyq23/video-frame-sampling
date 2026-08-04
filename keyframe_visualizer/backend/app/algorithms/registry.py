@@ -2,11 +2,15 @@ from __future__ import annotations
 
 from .aks_adapter import AKSAdapter
 from .base import AlgorithmAdapter
+from .vsi_adapter import VSIAdapter
 
 
 class AlgorithmRegistry:
     def __init__(self) -> None:
-        self._adapters: dict[str, AlgorithmAdapter] = {"aks": AKSAdapter()}
+        self._adapters: dict[str, AlgorithmAdapter] = {
+            "aks": AKSAdapter(),
+            "vsi": VSIAdapter(),
+        }
 
     def get(self, algorithm_id: str) -> AlgorithmAdapter:
         try:
@@ -16,4 +20,3 @@ class AlgorithmRegistry:
 
     def metadata(self) -> list[dict]:
         return [adapter.metadata() for adapter in self._adapters.values()]
-

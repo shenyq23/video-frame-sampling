@@ -5,10 +5,10 @@ import type {
   FrameRecord,
   Job,
   Manifest,
-  RunParameters,
   Session,
   VlmAnswer,
   VlmProfile,
+  ParameterSnapshot,
 } from "../types";
 import { ScoreChart } from "./ScoreChart";
 
@@ -37,10 +37,12 @@ function display(value: unknown, fallback = "—") {
 }
 
 function ParameterSummary({
+  algorithm,
   parameters,
   clipModels,
 }: {
-  parameters: Partial<RunParameters>;
+  algorithm: string;
+  parameters: ParameterSnapshot;
   clipModels: ClipModel[];
 }) {
   const uploadedModel = clipModels.find((model) => model.id === parameters.clip_model_id);
@@ -52,8 +54,8 @@ function ParameterSummary({
     parameters.candidate_sampling === "interval"
       ? `时间间隔 · ${display(parameters.sample_interval)} 秒`
       : "原仓库 int(FPS)";
-  const items = [
-    ["特征后端", parameters.feature_backend?.toUpperCase()],
+  const aksItems = [
+    ["特征后端", typeof parameters.feature_backend === "string" ? parameters.feature_backend.toUpperCase() : parameters.feature_backend],
     ["特征模型 / 服务", model],
     ["AKS 模式", parameters.aks_mode],
     ["目标帧数", parameters.max_num_frames],
@@ -68,6 +70,21 @@ function ParameterSummary({
     ["保存均匀抽帧", parameters.save_uniform_baseline],
     ["保存候选帧", parameters.save_candidate_frames],
   ];
+  const vsiItems = [
+    ["检测目标", Array.isArray(parameters.objects) ? parameters.objects.join(", ") : parameters.objects],
+    ["Top-K", parameters.top_k],
+    ["检测帧预算", parameters.detection_budget],
+    ["每轮采样数量", parameters.samples_per_round],
+    ["文本权重", parameters.text_weight],
+    ["YOLO-World 模型", parameters.model],
+    ["字幕模式", parameters.subtitle_mode],
+    ["字幕文本模型", parameters.text_model],
+    ["运行设备", parameters.device],
+    ["随机种子", parameters.seed],
+    ["保存均匀抽帧", parameters.save_uniform_baseline],
+    ["保存访问帧", parameters.save_candidate_frames],
+  ];
+  const items = algorithm === "vsi" ? vsiItems : aksItems;
 
   return (
     <section className="parameter-panel" aria-labelledby="parameter-title">
@@ -130,8 +147,9 @@ function normalizeSelectedFrames(manifest: Manifest): FrameRecord[] {
   }
   return manifest.selected_frames.map((frame) => ({
     ...frame,
-    order: frame.selected_order,
-    selected_by_aks: true,
+    order: frame.selected_order ?? frame.order ?? 0,
+    selected_by_aks: manifest.algorithm.id === "aks" ? true : frame.selected_by_aks,
+    selected_by_vsi: manifest.algorithm.id === "vsi" ? true : frame.selected_by_vsi,
   }));
 }
 
@@ -256,7 +274,7 @@ export function ResultView({ job, currentSession, manifest, clipModels, vlmProfi
             <p className="eyebrow">VIDEO SESSION</p>
             <h2>{currentSession.stage}</h2>
             <p className="state-query">“{currentSession.original_filename}”</p>
-            <p>候选帧和特征正在缓存，完成后就可以开始连续提问。</p>
+            <p>{currentSession.algorithm === "vsi" ? "视频信息和字幕正在预处理，完成后就可以开始连续提问。" : "候选帧和特征正在缓存，完成后就可以开始连续提问。"}</p>
             <div className="large-progress"><i style={{ width: `${currentSession.progress * 100}%` }} /></div>
           </div>
         </section>
@@ -276,7 +294,7 @@ export function ResultView({ job, currentSession, manifest, clipModels, vlmProfi
           <p>{job.status === "failed" ? job.error : `${job.original_filename} 正在处理，页面会自动更新。`}</p>
           <div className="large-progress"><i style={{ width: `${job.progress * 100}%` }} /></div>
         </div>
-        <ParameterSummary parameters={job.parameters} clipModels={clipModels} />
+        <ParameterSummary algorithm={job.algorithm} parameters={job.parameters} clipModels={clipModels} />
         {(job.status === "failed" || job.status === "succeeded") && (
           <div className="delete-row">
             <DeleteTaskButton job={job} deleting={deleting} onDelete={onDelete} />
@@ -288,9 +306,9 @@ export function ResultView({ job, currentSession, manifest, clipModels, vlmProfi
 
   const activeFrames = frameSets?.[frameSet].frames ?? [];
   const tabs: Array<{ key: FrameSetKey; label: string }> = [
-    { key: "selected", label: "AKS 抽出帧" },
+    { key: "selected", label: `${job.algorithm.toUpperCase()} 抽出帧` },
     { key: "uniform", label: "同数量均匀抽帧" },
-    { key: "candidates", label: "所有候选帧" },
+    { key: "candidates", label: job.algorithm === "vsi" ? "VSI 访问帧" : "所有候选帧" },
   ];
 
   return (
@@ -308,16 +326,16 @@ export function ResultView({ job, currentSession, manifest, clipModels, vlmProfi
         </div>
       </div>
 
-      <ParameterSummary parameters={job.parameters} clipModels={clipModels} />
+      <ParameterSummary algorithm={job.algorithm} parameters={job.parameters} clipModels={clipModels} />
 
       <div className="summary-grid">
         <div><span>已选帧</span><strong>{manifest.summary.selected_keyframes}</strong><small>/ 请求 {manifest.summary.requested_keyframes}</small></div>
-        <div><span>候选帧</span><strong>{manifest.summary.candidate_frames}</strong><small>{manifest.candidate_sampling.interval_seconds ? `请求 ${manifest.candidate_sampling.interval_seconds}s · 实际 ${manifest.candidate_sampling.effective_interval_seconds?.toFixed(6) ?? "—"}s` : "原始采样"}</small></div>
+        <div><span>{job.algorithm === "vsi" ? "访问帧" : "候选帧"}</span><strong>{manifest.summary.candidate_frames}</strong><small>{job.algorithm === "vsi" ? "YOLO-World 实际检测" : manifest.candidate_sampling?.interval_seconds ? `请求 ${manifest.candidate_sampling.interval_seconds}s · 实际 ${manifest.candidate_sampling.effective_interval_seconds?.toFixed(6) ?? "—"}s` : "原始采样"}</small></div>
         <div><span>视频时长</span><strong>{formatTime(manifest.video.duration_seconds)}</strong><small>{manifest.video.fps.toFixed(2)} FPS</small></div>
       </div>
 
       <video ref={videoRef} className="video-player" controls preload="metadata" src={api.videoUrl(job.id)} />
-      <ScoreChart candidates={manifest.candidates} />
+      <ScoreChart candidates={manifest.candidates} algorithm={job.algorithm} />
 
       <div className="frame-set-toolbar">
         <div className="frame-tabs" role="group" aria-label="切换帧集合">
@@ -434,9 +452,11 @@ export function ResultView({ job, currentSession, manifest, clipModels, vlmProfi
               </div>
               <dl>
                 <div><dt>原视频帧</dt><dd>{frame.original_frame_index}</dd></div>
-                <div><dt>候选序号</dt><dd>#{frame.candidate_order}</dd></div>
-                <div><dt>相关性</dt><dd>{frame.relevance_score.toFixed(4)}</dd></div>
-                {frameSet === "selected" ? (
+                <div><dt>{job.algorithm === "vsi" ? "访问序号" : "候选序号"}</dt><dd>{frame.candidate_order ? `#${frame.candidate_order}` : "—"}</dd></div>
+                <div><dt>{job.algorithm === "vsi" ? "融合分数" : "相关性"}</dt><dd>{typeof frame.relevance_score === "number" ? frame.relevance_score.toFixed(4) : "—"}</dd></div>
+                {job.algorithm === "vsi" ? (
+                  <><div><dt>融合分数</dt><dd>{typeof frame.fused_score === "number" ? frame.fused_score.toFixed(4) : "—"}</dd></div><div><dt>采样概率</dt><dd>{typeof frame.sampling_probability === "number" ? frame.sampling_probability.toFixed(6) : "—"}</dd></div><div><dt>访问顺序</dt><dd>{frame.visited_order ?? "—"}</dd></div></>
+                ) : frameSet === "selected" ? (
                   <div><dt>Segment</dt><dd>{typeof frame.segment_id === "number" && frame.segment_id >= 0 ? `${frame.segment_id} · d${frame.segment_depth}` : "—"}</dd></div>
                 ) : (
                   <div><dt>被 AKS 选中</dt><dd>{frame.selected_by_aks ? "是" : "否"}</dd></div>

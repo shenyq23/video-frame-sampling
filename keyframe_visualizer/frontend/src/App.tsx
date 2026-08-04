@@ -3,6 +3,7 @@ import { api } from "./api";
 import { QueryList } from "./components/QueryList";
 import { ResultView } from "./components/ResultView";
 import { RunForm } from "./components/RunForm";
+import { VsiForm } from "./components/VsiForm";
 import { RunList } from "./components/RunList";
 import type {
   AlgorithmMetadata,
@@ -10,8 +11,12 @@ import type {
   Job,
   Manifest,
   RunParameters,
+  AlgorithmId,
+  VsiQueryParameters,
+  VsiSessionParameters,
   Session,
   VlmProfile,
+  ParameterSnapshot,
 } from "./types";
 
 export default function App() {
@@ -30,6 +35,7 @@ export default function App() {
   const [pendingDelete, setPendingDelete] = useState<Job | null>(null);
   const [pendingSessionDelete, setPendingSessionDelete] = useState<Session | null>(null);
   const [globalError, setGlobalError] = useState("");
+  const [activeAlgorithm, setActiveAlgorithm] = useState<AlgorithmId>("aks");
 
   const latestJobForSession = useCallback((items: Job[], sessionId: string | null) => {
     if (!sessionId) return null;
@@ -61,8 +67,8 @@ export default function App() {
         setClipModels(modelData);
         setVlmProfiles(Object.values(vlmProfileData));
         const initialSession =
-          sessionData.find((session) => session.status === "succeeded") ??
-          sessionData[0] ??
+          sessionData.find((session) => session.algorithm === "aks" && session.status === "succeeded") ??
+          sessionData.find((session) => session.algorithm === "aks") ??
           null;
         setCurrentSession(initialSession);
         setSelected(initialSession ? latestJobForSession(jobData, initialSession.id) : null);
@@ -107,11 +113,16 @@ export default function App() {
     }
   }, [selected?.id, selected?.status]);
 
-  const prepareSession = async (video: File, parameters: RunParameters) => {
+  const prepareSession = async (
+    algorithm: AlgorithmId,
+    video: File,
+    parameters: ParameterSnapshot,
+    subtitle: File | null = null,
+  ) => {
     setSubmitting(true);
     setGlobalError("");
     try {
-      const session = await api.createSession(video, parameters);
+      const session = await api.createSession(algorithm, video, parameters, subtitle);
       setSessions((current) => [session, ...current.filter((item) => item.id !== session.id)]);
       setCurrentSession(session);
       setSelected(null);
@@ -124,7 +135,7 @@ export default function App() {
     }
   };
 
-  const runSessionQuery = async (query: string, parameters: RunParameters) => {
+  const runSessionQuery = async (query: string, parameters: ParameterSnapshot) => {
     if (!currentSession || currentSession.status !== "succeeded") {
       setGlobalError("请先等待视频预处理完成");
       return false;
@@ -132,7 +143,7 @@ export default function App() {
     setSubmitting(true);
     setGlobalError("");
     try {
-      const job = await api.createSessionJob(currentSession.id, query, parameters);
+      const job = await api.createSessionJob(currentSession.id, activeAlgorithm, query, parameters);
       setJobs((current) => [job, ...current]);
       setSelected(job);
       setManifest(null);
@@ -216,6 +227,7 @@ export default function App() {
   };
 
   const selectSession = (session: Session) => {
+    setActiveAlgorithm(session.algorithm);
     setPreparingNewSession(false);
     setCurrentSession(session);
     setSelected(latestJobForSession(jobs, session.id));
@@ -223,6 +235,7 @@ export default function App() {
   };
 
   const selectJob = (job: Job) => {
+    if (job.algorithm === "aks" || job.algorithm === "vsi") setActiveAlgorithm(job.algorithm);
     setPreparingNewSession(false);
     setSelected(job);
     if (job.session_id) {
@@ -231,32 +244,69 @@ export default function App() {
     }
   };
 
+  const switchAlgorithm = (algorithm: AlgorithmId) => {
+    setActiveAlgorithm(algorithm);
+    setSelected(null);
+    setManifest(null);
+    const next = sessions.find((session) => session.algorithm === algorithm && session.status === "succeeded")
+      ?? sessions.find((session) => session.algorithm === algorithm)
+      ?? null;
+    setCurrentSession(next);
+    setPreparingNewSession(!next);
+    setGlobalError("");
+  };
+
+  const visibleSessions = useMemo(
+    () => sessions.filter((session) => session.algorithm === activeAlgorithm),
+    [sessions, activeAlgorithm],
+  );
+
   return (
     <div className="app-shell">
       <header className="topbar">
         <div className="brand"><span className="brand-mark"><i /><i /><i /></span><div><h1>Keyframe Lab</h1><p>可解释的视频抽帧工作台</p></div></div>
-        <div className="topbar-status"><span className="live-dot" />AKS connected</div>
+        <div className="topbar-status"><span className="live-dot" />服务已连接</div>
       </header>
 
       {globalError && <div className="global-error" role="alert">{globalError}<button onClick={() => setGlobalError("")}>关闭</button></div>}
 
       <main className="workspace">
         <aside className="control-column">
-          <RunForm
-            algorithm={algorithms.find((item) => item.id === "aks")}
-            clipModels={clipModels}
-            currentSession={currentSession}
-            preparingNewSession={preparingNewSession}
-            busy={submitting}
-            onPrepareSession={prepareSession}
-            onRunQuery={runSessionQuery}
-            onUploadClipModel={uploadClipModel}
-            onPreparingNewSessionChange={setPreparingNewSession}
-          />
+          <div className="algorithm-switcher" role="tablist" aria-label="抽帧算法">
+            <span className="algorithm-switcher-label">抽帧算法</span>
+            {(["aks", "vsi"] as AlgorithmId[]).map((algorithm) => (
+              <button key={algorithm} className={activeAlgorithm === algorithm ? "selected" : ""} type="button" role="tab" aria-selected={activeAlgorithm === algorithm} onClick={() => switchAlgorithm(algorithm)}>
+                {algorithm.toUpperCase()}
+              </button>
+            ))}
+          </div>
+          {activeAlgorithm === "aks" ? (
+            <RunForm
+              algorithm={algorithms.find((item) => item.id === "aks")}
+              clipModels={clipModels}
+              currentSession={currentSession?.algorithm === "aks" ? currentSession : null}
+              preparingNewSession={preparingNewSession}
+              busy={submitting}
+              onPrepareSession={(video, parameters) => prepareSession("aks", video, parameters)}
+              onRunQuery={(query, parameters) => runSessionQuery(query, parameters)}
+              onUploadClipModel={uploadClipModel}
+              onPreparingNewSessionChange={setPreparingNewSession}
+            />
+          ) : (
+            <VsiForm
+              algorithm={algorithms.find((item) => item.id === "vsi")}
+              currentSession={currentSession?.algorithm === "vsi" ? currentSession : null}
+              preparingNewSession={preparingNewSession}
+              busy={submitting}
+              onPrepareSession={(video, parameters, subtitle) => prepareSession("vsi", video, parameters, subtitle)}
+              onRunQuery={(query, parameters) => runSessionQuery(query, parameters)}
+              onPreparingNewSessionChange={setPreparingNewSession}
+            />
+          )}
           <RunList
-            sessions={sessions}
+            sessions={visibleSessions}
             jobs={jobs}
-            selectedSessionId={preparingNewSession ? null : currentSession?.id ?? null}
+            selectedSessionId={preparingNewSession ? null : currentSession?.algorithm === activeAlgorithm ? currentSession.id : null}
             onSelect={selectSession}
           />
         </aside>

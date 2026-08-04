@@ -10,3 +10,8 @@ decord>=0.6.0
 opencv-python-headless>=4.8
 torch
 transformers
+scipy>=1.10
+ultralytics>=8.3
+clip @ git+https://github.com/ultralytics/CLIP.git@0fa238b2ba553fe76dc158348d8e34625e3e2470
+sentence-transformers>=3.0
+easyocr>=1.7
