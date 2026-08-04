@@ -14,7 +14,7 @@ import numpy as np
 from ..settings import (
     VSI_BUNDLED_CLIP_MODEL,
     VSI_BUNDLED_EASYOCR_DIR,
-    VSI_BUNDLED_MODEL_CACHE_DIR,
+    VSI_BUNDLED_TEXT_MODEL,
     VSI_BUNDLED_YOLO_MODEL,
     VSI_MODEL_CACHE_DIR,
     VSI_ROOT,
@@ -43,23 +43,24 @@ class VSIAdapter(AlgorithmAdapter):
 
     @classmethod
     def _bundled_text_model(cls) -> Path | None:
-        snapshots = (
-            VSI_BUNDLED_MODEL_CACHE_DIR
-            / "huggingface"
-            / "hub"
-            / "models--sentence-transformers--paraphrase-multilingual-mpnet-base-v2"
-            / "snapshots"
+        required_files = (
+            "config.json",
+            "modules.json",
+            "tokenizer.json",
+            "tokenizer_config.json",
+            "sentencepiece.bpe.model",
         )
-        if not snapshots.is_dir():
+        if not VSI_BUNDLED_TEXT_MODEL.is_dir():
             return None
-        for snapshot in sorted(snapshots.iterdir(), reverse=True):
-            if (
-                snapshot.is_dir()
-                and (snapshot / "config.json").is_file()
-                and cls._usable_file(snapshot / "model.safetensors")
-            ):
-                return snapshot
-        return None
+        if not all((VSI_BUNDLED_TEXT_MODEL / filename).is_file() for filename in required_files):
+            return None
+        if not (VSI_BUNDLED_TEXT_MODEL / "1_Pooling" / "config.json").is_file():
+            return None
+        return (
+            VSI_BUNDLED_TEXT_MODEL
+            if cls._usable_file(VSI_BUNDLED_TEXT_MODEL / "model.safetensors")
+            else None
+        )
 
     @classmethod
     def _assets(cls) -> dict[str, dict[str, Any]]:
@@ -86,11 +87,17 @@ class VSIAdapter(AlgorithmAdapter):
 
     @classmethod
     def _resolve_text_model(cls, model_name: str) -> str:
-        default_model = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
-        if model_name == default_model:
+        default_models = {
+            "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+            "weights/sentence_transformer/paraphrase-multilingual-mpnet-base-v2",
+        }
+        if model_name in default_models:
             bundled = cls._bundled_text_model()
             if bundled is not None:
                 return str(bundled)
+        requested = Path(model_name).expanduser()
+        if not requested.is_absolute() and (VSI_ROOT / requested).is_dir():
+            return str((VSI_ROOT / requested).resolve())
         return model_name
 
     @classmethod
@@ -147,7 +154,7 @@ class VSIAdapter(AlgorithmAdapter):
                     "subtitle_mode": "ocr",
                     "ocr_fps": 2.0,
                     "ocr_crop_top": 0.62,
-                    "text_model": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+                    "text_model": "weights/sentence_transformer/paraphrase-multilingual-mpnet-base-v2",
                     "objects": [],
                     "top_k": 8,
                     "detection_budget": 64,

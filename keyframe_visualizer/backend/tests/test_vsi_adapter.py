@@ -32,11 +32,17 @@ class VSIAdapterAssetTests(unittest.TestCase):
             ):
                 self.assertEqual(VSIAdapter._resolve_yolo_model(model.name), str(model))
 
-    def test_default_text_model_resolves_to_bundled_snapshot(self) -> None:
-        default_model = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+    def test_default_text_model_resolves_to_bundled_weights(self) -> None:
+        default_model = "weights/sentence_transformer/paraphrase-multilingual-mpnet-base-v2"
         bundled = Path("/tmp/vsi-text-model")
         with patch.object(VSIAdapter, "_bundled_text_model", return_value=bundled):
             self.assertEqual(VSIAdapter._resolve_text_model(default_model), str(bundled))
+
+    def test_legacy_huggingface_model_id_uses_bundled_weights(self) -> None:
+        legacy_model = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+        bundled = Path("/tmp/vsi-text-model")
+        with patch.object(VSIAdapter, "_bundled_text_model", return_value=bundled):
+            self.assertEqual(VSIAdapter._resolve_text_model(legacy_model), str(bundled))
 
 
 if __name__ == "__main__":

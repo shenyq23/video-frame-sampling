@@ -15,7 +15,7 @@ const sessionDefaults: VsiSessionParameters = {
   subtitle_mode: "ocr",
   ocr_fps: 2,
   ocr_crop_top: 0.62,
-  text_model: "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+  text_model: "weights/sentence_transformer/paraphrase-multilingual-mpnet-base-v2",
   device: "cpu",
 };
 

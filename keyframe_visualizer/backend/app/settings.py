@@ -13,10 +13,15 @@ PROJECT_DIR = BACKEND_DIR.parent
 AKS_ROOT = PROJECT_DIR.parent
 VSI_ROOT = AKS_ROOT / "VSI_VideoFraming"
 VSI_BUNDLED_OUTPUT_DIR = VSI_ROOT / "output"
-VSI_BUNDLED_MODEL_CACHE_DIR = VSI_BUNDLED_OUTPUT_DIR / "model_cache"
 VSI_BUNDLED_EASYOCR_DIR = VSI_BUNDLED_OUTPUT_DIR / "easyocr_models"
 VSI_BUNDLED_YOLO_MODEL = VSI_ROOT / "yolov8s-worldv2.pt"
 VSI_BUNDLED_CLIP_MODEL = VSI_ROOT / "weights" / "clip" / "ViT-B-32.pt"
+VSI_BUNDLED_TEXT_MODEL = (
+    VSI_ROOT
+    / "weights"
+    / "sentence_transformer"
+    / "paraphrase-multilingual-mpnet-base-v2"
+)
 DATA_DIR = PROJECT_DIR / "data"
 UPLOAD_DIR = DATA_DIR / "uploads"
 RUNS_DIR = DATA_DIR / "runs"

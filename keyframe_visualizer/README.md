@@ -187,7 +187,7 @@ git -C VSI_VideoFraming lfs pull
 - `VSI_VideoFraming/yolov8s-worldv2.pt`；
 - `VSI_VideoFraming/weights/clip/ViT-B-32.pt`；
 - `VSI_VideoFraming/output/easyocr_models/`；
-- `VSI_VideoFraming/output/model_cache/huggingface/` 中的字幕文本模型快照。
+- `VSI_VideoFraming/weights/sentence_transformer/paraphrase-multilingual-mpnet-base-v2/` 中的扁平字幕文本模型。
 
 可视化自身产生的运行缓存仍写入 `keyframe_visualizer/data/models/vsi/`。如果选择自定义 YOLO 或字幕模型名称，相关组件仍可能按照第三方库的行为联网下载；绝对路径形式的自定义 YOLO 权重会在任务启动前检查文件完整性。
 

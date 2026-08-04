@@ -54,7 +54,7 @@ class VSIParameters(BaseModel):
     ocr_fps: float = Field(default=2.0, gt=0, le=10, allow_inf_nan=False)
     ocr_crop_top: float = Field(default=0.62, ge=0, lt=1, allow_inf_nan=False)
     ocr_confidence: float = Field(default=0.30, ge=0, le=1, allow_inf_nan=False)
-    text_model: str = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+    text_model: str = "weights/sentence_transformer/paraphrase-multilingual-mpnet-base-v2"
     device: Literal["cuda", "mps", "cpu"] = "cpu"
     objects: list[str] = Field(default_factory=list)
     top_k: int = Field(default=8, ge=1, le=512)
