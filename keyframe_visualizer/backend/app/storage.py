@@ -284,6 +284,13 @@ class SessionStore:
             cursor = connection.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
         return cursor.rowcount > 0
 
+    def delete_with_jobs(self, session_id: str) -> bool:
+        """Delete a session and all of its jobs in one SQLite transaction."""
+        with self._lock, self._connect() as connection:
+            connection.execute("DELETE FROM jobs WHERE session_id = ?", (session_id,))
+            cursor = connection.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+        return cursor.rowcount > 0
+
     @staticmethod
     def to_record(row: dict[str, Any]) -> SessionRecord:
         try:

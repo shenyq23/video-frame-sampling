@@ -21,6 +21,7 @@ DATA_DIR = PROJECT_DIR / "data"
 UPLOAD_DIR = DATA_DIR / "uploads"
 RUNS_DIR = DATA_DIR / "runs"
 SESSIONS_DIR = DATA_DIR / "sessions"
+TRASH_DIR = DATA_DIR / ".trash"
 DATABASE_PATH = DATA_DIR / "app.db"
 CLIP_MODELS_DIR = DATA_DIR / "models" / "clip"
 VSI_MODEL_CACHE_DIR = DATA_DIR / "models" / "vsi"
@@ -35,6 +36,7 @@ def ensure_data_directories() -> None:
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+    TRASH_DIR.mkdir(parents=True, exist_ok=True)
     CLIP_MODELS_DIR.mkdir(parents=True, exist_ok=True)
     VSI_MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 

@@ -5,6 +5,7 @@ import json
 import re
 import shutil
 import time
+import traceback
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -31,6 +32,7 @@ from .settings import (
     DATABASE_PATH,
     RUNS_DIR,
     SESSIONS_DIR,
+    TRASH_DIR,
     UPLOAD_DIR,
     ensure_data_directories,
     feature_profile_status,
@@ -54,6 +56,7 @@ vlm_answers = VlmAnswerService()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    _cleanup_delete_tombstones()
     await session_manager.start()
     await manager.start()
     yield
@@ -162,6 +165,73 @@ def _delete_with_retries(path: Path, *, is_directory: bool, label: str) -> None:
                     detail=f"无法清除{label}：{error}。路径：{path}",
                 ) from error
             time.sleep(DELETE_RETRY_DELAYS_SECONDS[attempt])
+
+
+def _stage_session_paths_for_delete(
+    session_id: str,
+    session_dir: Path,
+    job_paths: list[tuple[str, Path]],
+) -> list[tuple[Path, Path]]:
+    """Atomically move session-owned paths aside, rolling back on any failure."""
+    batch_dir = TRASH_DIR / f"session-{session_id}-{uuid.uuid4().hex}"
+    batch_dir.mkdir(parents=True, exist_ok=False)
+    staged: list[tuple[Path, Path]] = []
+    targets = [("session", session_dir), *[(f"run-{job_id}", path) for job_id, path in job_paths]]
+    try:
+        for name, source in targets:
+            if not source.exists():
+                continue
+            target = batch_dir / name
+            source.replace(target)
+            staged.append((source, target))
+    except OSError as error:
+        rollback_succeeded = True
+        for source, target in reversed(staged):
+            try:
+                if target.exists() and not source.exists():
+                    target.replace(source)
+            except OSError:
+                rollback_succeeded = False
+                traceback.print_exc()
+        if rollback_succeeded:
+            shutil.rmtree(batch_dir, ignore_errors=True)
+        windows_error = getattr(error, "winerror", None)
+        reason = "文件仍被浏览器或其他程序占用" if windows_error in {32, 33} else str(error)
+        raise HTTPException(
+            status_code=423 if windows_error in {32, 33} else 409,
+            detail=f"无法清除视频会话：{reason}。请关闭正在播放该视频的页面或程序后重试。",
+        ) from error
+    if not staged:
+        batch_dir.rmdir()
+    return staged
+
+
+def _restore_staged_paths(staged: list[tuple[Path, Path]]) -> None:
+    for source, target in reversed(staged):
+        if target.exists() and not source.exists():
+            target.replace(source)
+
+
+def _purge_staged_paths(staged: list[tuple[Path, Path]]) -> None:
+    batch_dirs = {target.parent for _, target in staged}
+    for batch_dir in batch_dirs:
+        (batch_dir / ".committed").touch(exist_ok=True)
+        try:
+            _delete_with_retries(batch_dir, is_directory=True, label="已删除会话的暂存数据")
+        except HTTPException:
+            # The database and public paths are already clean. A later startup retries
+            # removal of an OS-locked tombstone instead of resurrecting stale records.
+            traceback.print_exc()
+
+
+def _cleanup_delete_tombstones() -> None:
+    if not TRASH_DIR.is_dir():
+        return
+    for path in TRASH_DIR.iterdir():
+        if path.is_dir() and (path / ".committed").is_file():
+            shutil.rmtree(path, ignore_errors=True)
+        elif path.is_file():
+            path.unlink(missing_ok=True)
 
 
 def _validate_session_job_parameters(session: dict, algorithm: str, parameters: dict) -> None:
@@ -360,15 +430,23 @@ def delete_session(session_id: str) -> Response:
             detail="这个视频会话仍有排队中或运行中的 query，请等待任务结束后重试",
         )
 
-    for job in session_jobs:
-        output_dir = _task_owned_path(job["output_dir"], RUNS_DIR, "run output")
-        if output_dir.exists():
-            _delete_with_retries(output_dir, is_directory=True, label="任务输出")
     session_dir = _task_owned_path(row["session_dir"], SESSIONS_DIR, "video session")
-    if session_dir.exists():
-        _delete_with_retries(session_dir, is_directory=True, label="视频会话")
-    store.delete_by_session(session_id)
-    session_store.delete(session_id)
+    job_paths = [
+        (str(job["id"]), _task_owned_path(job["output_dir"], RUNS_DIR, "run output"))
+        for job in session_jobs
+    ]
+    staged = _stage_session_paths_for_delete(session_id, session_dir, job_paths)
+    try:
+        if not session_store.delete_with_jobs(session_id):
+            raise RuntimeError("视频会话数据库记录不存在")
+    except Exception as error:
+        try:
+            _restore_staged_paths(staged)
+        finally:
+            for batch_dir in {target.parent for _, target in staged}:
+                shutil.rmtree(batch_dir, ignore_errors=True)
+        raise HTTPException(status_code=500, detail=f"删除视频会话数据库记录失败：{error}") from error
+    _purge_staged_paths(staged)
     return Response(status_code=204)
 
 

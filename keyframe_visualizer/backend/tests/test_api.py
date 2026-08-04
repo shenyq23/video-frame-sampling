@@ -352,6 +352,63 @@ class ApiTests(unittest.TestCase):
             self.assertTrue(output_dir.exists())
             self.assertIsNotNone(store.get_raw("running-job"))
 
+    def test_delete_video_session_removes_session_runs_and_database_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sessions_root = root / "sessions"
+            runs_root = root / "runs"
+            trash_root = root / "trash"
+            session_dir = sessions_root / "session-1"
+            source = session_dir / "source" / "video.mp4"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"video")
+            (session_dir / "preprocess" / "metadata.json").parent.mkdir(parents=True)
+            (session_dir / "preprocess" / "metadata.json").write_text("{}", encoding="utf-8")
+            run_dir = runs_root / "job-1"
+            run_dir.mkdir(parents=True)
+            (run_dir / "manifest.json").write_text("{}", encoding="utf-8")
+
+            store = JobStore(root / "jobs.db")
+            sessions = SessionStore(root / "jobs.db")
+            sessions.create(
+                session_id="session-1",
+                algorithm="aks",
+                config={"parameters": self._session_parameters()},
+                video_path=source,
+                original_filename="video.mp4",
+                session_dir=session_dir,
+                cache_dir=session_dir / "preprocess",
+            )
+            sessions.update("session-1", status="succeeded", stage="ready", progress=1.0)
+            store.create(
+                job_id="job-1",
+                algorithm="aks",
+                query="query",
+                config={"parameters": self._session_parameters()},
+                video_path=source,
+                original_filename="video.mp4",
+                output_dir=run_dir,
+                session_id="session-1",
+                owns_video=False,
+            )
+            store.update("job-1", status="succeeded", stage="done", progress=1.0)
+
+            with (
+                patch.object(main_module, "store", store),
+                patch.object(main_module, "session_store", sessions),
+                patch.object(main_module, "SESSIONS_DIR", sessions_root),
+                patch.object(main_module, "RUNS_DIR", runs_root),
+                patch.object(main_module, "TRASH_DIR", trash_root),
+            ):
+                with TestClient(app) as client:
+                    response = client.delete("/api/sessions/session-1")
+
+            self.assertEqual(response.status_code, 204)
+            self.assertFalse(session_dir.exists())
+            self.assertFalse(run_dir.exists())
+            self.assertIsNone(sessions.get_raw("session-1"))
+            self.assertIsNone(store.get_raw("job-1"))
+
     def test_windows_file_lock_is_retried_before_delete_succeeds(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "video.mp4"

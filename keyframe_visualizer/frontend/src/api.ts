@@ -33,10 +33,10 @@ export const api = {
   clipModels: () => checked<ClipModel[]>(fetch(`${API_BASE}/api/models/clip`)),
   vlmProfiles: () =>
     checked<Record<string, VlmProfile>>(fetch(`${API_BASE}/api/settings/vlm-profiles`)),
-  sessions: () => checked<Session[]>(fetch(`${API_BASE}/api/sessions`)),
-  session: (id: string) => checked<Session>(fetch(`${API_BASE}/api/sessions/${id}`)),
-  jobs: () => checked<Job[]>(fetch(`${API_BASE}/api/jobs`)),
-  job: (id: string) => checked<Job>(fetch(`${API_BASE}/api/jobs/${id}`)),
+  sessions: () => checked<Session[]>(fetch(`${API_BASE}/api/sessions`, { cache: "no-store" })),
+  session: (id: string) => checked<Session>(fetch(`${API_BASE}/api/sessions/${id}`, { cache: "no-store" })),
+  jobs: () => checked<Job[]>(fetch(`${API_BASE}/api/jobs`, { cache: "no-store" })),
+  job: (id: string) => checked<Job>(fetch(`${API_BASE}/api/jobs/${id}`, { cache: "no-store" })),
   createSession: async (
     algorithm: AlgorithmId,
     video: File,
@@ -89,10 +89,11 @@ export const api = {
     }
   },
   manifest: (id: string) =>
-    checked<Manifest>(fetch(`${API_BASE}/api/jobs/${id}/manifest`)),
+    checked<Manifest>(fetch(`${API_BASE}/api/jobs/${id}/manifest`, { cache: "no-store" })),
   savedVlmAnswer: async (id: string, frameSet: string) => {
     const response = await fetch(
       `${API_BASE}/api/jobs/${id}/vlm-answer?frame_set=${encodeURIComponent(frameSet)}`,
+      { cache: "no-store" },
     );
     if (response.status === 404) return null;
     return checked<VlmAnswer>(Promise.resolve(response));

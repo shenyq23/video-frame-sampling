@@ -203,18 +203,33 @@ export default function App() {
     setCurrentSession(null);
     setSelected(null);
     setManifest(null);
-    await new Promise<void>((resolve) => window.setTimeout(resolve, 350));
+    // Unmount the video element before asking Windows to remove its source file.
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 800));
     try {
       await api.deleteSession(session.id);
-      const [remainingJobs, remainingSessions] = await Promise.all([api.jobs(), api.sessions()]);
+      const localRemainingJobs = jobs.filter((job) => job.session_id !== session.id);
+      const localRemainingSessions = sessions.filter((item) => item.id !== session.id);
+      setJobs(localRemainingJobs);
+      setSessions(localRemainingSessions);
+
+      let remainingJobs = localRemainingJobs;
+      let remainingSessions = localRemainingSessions;
+      try {
+        const [fetchedJobs, fetchedSessions] = await Promise.all([api.jobs(), api.sessions()]);
+        remainingJobs = fetchedJobs.filter((job) => job.session_id !== session.id);
+        remainingSessions = fetchedSessions.filter((item) => item.id !== session.id);
+      } catch {
+        // The DELETE already succeeded; retain the clean local state if refresh fails.
+      }
       setJobs(remainingJobs);
       setSessions(remainingSessions);
       const nextSession =
-        remainingSessions.find((item) => item.status === "succeeded") ??
-        remainingSessions[0] ??
+        remainingSessions.find((item) => item.algorithm === activeAlgorithm && item.status === "succeeded") ??
+        remainingSessions.find((item) => item.algorithm === activeAlgorithm) ??
         null;
       setCurrentSession(nextSession);
       setSelected(nextSession ? latestJobForSession(remainingJobs, nextSession.id) : null);
+      setPreparingNewSession(!nextSession);
       setPendingSessionDelete(null);
     } catch (error) {
       setGlobalError(error instanceof Error ? error.message : "删除视频会话失败");
