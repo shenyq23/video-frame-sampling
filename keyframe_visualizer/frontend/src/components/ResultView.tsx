@@ -46,16 +46,24 @@ function ParameterSummary({
   clipModels: ClipModel[];
 }) {
   const uploadedModel = clipModels.find((model) => model.id === parameters.clip_model_id);
+  const isMep = parameters.feature_backend === "mep";
+  const backendDisplayName = isMep
+    ? "86M"
+    : typeof parameters.feature_backend === "string"
+      ? parameters.feature_backend.toUpperCase()
+      : parameters.feature_backend;
   const model =
     parameters.feature_backend === "clip"
       ? uploadedModel?.name ?? parameters.clip_model_id ?? parameters.model_name
-      : parameters.feature_profile;
+      : isMep
+        ? "86M-default"
+        : parameters.feature_profile;
   const sampling =
     parameters.candidate_sampling === "interval"
       ? `时间间隔 · ${display(parameters.sample_interval)} 秒`
       : "原仓库 int(FPS)";
   const aksItems = [
-    ["特征后端", typeof parameters.feature_backend === "string" ? parameters.feature_backend.toUpperCase() : parameters.feature_backend],
+    ["特征后端", backendDisplayName],
     ["特征模型 / 服务", model],
     ["AKS 模式", parameters.aks_mode],
     ["目标帧数", parameters.max_num_frames],
@@ -455,9 +463,13 @@ export function ResultView({ job, currentSession, manifest, clipModels, vlmProfi
                 <div><dt>{job.algorithm === "vsi" ? "访问序号" : "候选序号"}</dt><dd>{frame.candidate_order ? `#${frame.candidate_order}` : "—"}</dd></div>
                 <div><dt>{job.algorithm === "vsi" ? "融合分数" : "相关性"}</dt><dd>{typeof frame.relevance_score === "number" ? frame.relevance_score.toFixed(4) : "—"}</dd></div>
                 {job.algorithm === "vsi" ? (
-                  <><div><dt>融合分数</dt><dd>{typeof frame.fused_score === "number" ? frame.fused_score.toFixed(4) : "—"}</dd></div><div><dt>采样概率</dt><dd>{typeof frame.sampling_probability === "number" ? frame.sampling_probability.toFixed(6) : "—"}</dd></div><div><dt>访问顺序</dt><dd>{frame.visited_order ?? "—"}</dd></div></>
+                  <><div><dt>采样概率</dt><dd>{typeof frame.sampling_probability === "number" ? frame.sampling_probability.toFixed(6) : "—"}</dd></div><div><dt>访问顺序</dt><dd>{frame.visited_order ?? "—"}</dd></div></>
                 ) : frameSet === "selected" ? (
-                  <div><dt>Segment</dt><dd>{typeof frame.segment_id === "number" && frame.segment_id >= 0 ? `${frame.segment_id} · d${frame.segment_depth}` : "—"}</dd></div>
+                  <>
+                    {/* Temporarily hidden from the AKS selected-frame cards.
+                    <div><dt>Segment</dt><dd>{typeof frame.segment_id === "number" && frame.segment_id >= 0 ? `${frame.segment_id} · d${frame.segment_depth}` : "—"}</dd></div>
+                    */}
+                  </>
                 ) : (
                   <div><dt>被 AKS 选中</dt><dd>{frame.selected_by_aks ? "是" : "否"}</dd></div>
                 )}
