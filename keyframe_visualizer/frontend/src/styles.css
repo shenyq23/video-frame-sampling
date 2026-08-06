@@ -132,6 +132,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .parameter-grid div { min-width: 0; display: grid; gap: 4px; }
 .parameter-grid dt { color: var(--muted); font-size: 10px; }
 .parameter-grid dd { margin: 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 650; }
+.run-timing { display: flex; flex-wrap: wrap; gap: 24px; margin: -8px 0 24px; padding: 0 19px 16px; border-bottom: 1px solid var(--line); }
+.run-timing div { display: grid; gap: 3px; }
+.run-timing span { color: var(--muted); font-size: 10px; }
+.run-timing strong { font-size: 13px; font-variant-numeric: tabular-nums; }
+.standalone-timing { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.standalone-timing strong { color: var(--ink); }
 .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); margin-bottom: 24px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
 .summary-grid > div { min-width: 0; display: grid; gap: 5px; padding: 18px 20px; border-right: 1px solid var(--line); }
 .summary-grid > div:last-child { border-right: 0; }

@@ -79,6 +79,7 @@ export interface VlmAnswer {
   frame_set_name: string;
   query: string;
   answer: string;
+  generation_duration_seconds?: number | null;
   source_frame_count: number;
   used_frame_count: number;
   frames_limited: boolean;

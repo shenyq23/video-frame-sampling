@@ -70,6 +70,7 @@ class VlmAnswerServiceTests(unittest.TestCase):
                 )
 
             self.assertEqual(result["answer"], "测试回答")
+            self.assertGreaterEqual(result["generation_duration_seconds"], 0)
             self.assertEqual(result["source_frame_count"], 5)
             self.assertEqual(result["used_frame_count"], 3)
             self.assertTrue(result["frames_limited"])

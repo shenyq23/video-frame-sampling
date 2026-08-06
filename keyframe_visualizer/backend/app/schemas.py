@@ -214,6 +214,7 @@ class VlmAnswerResult(BaseModel):
     frame_set_name: str
     query: str
     answer: str
+    generation_duration_seconds: Optional[float] = Field(default=None, ge=0)
     source_frame_count: int
     used_frame_count: int
     frames_limited: bool

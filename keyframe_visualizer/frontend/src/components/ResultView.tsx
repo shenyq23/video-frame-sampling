@@ -36,6 +36,36 @@ function display(value: unknown, fallback = "—") {
   return String(value);
 }
 
+function formatDuration(seconds: number | null | undefined) {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds) || seconds < 0) return "—";
+  if (seconds < 10) return `${seconds.toFixed(2)} 秒`;
+  if (seconds < 60) return `${seconds.toFixed(1)} 秒`;
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainder = Math.floor(seconds % 60);
+  return hours > 0
+    ? `${hours} 小时 ${minutes} 分 ${remainder} 秒`
+    : `${minutes} 分 ${remainder} 秒`;
+}
+
+function recordDuration(record: Pick<Job | Session, "created_at" | "updated_at" | "status"> | null) {
+  if (!record) return null;
+  const started = Date.parse(record.created_at);
+  const terminal = record.status === "succeeded" || record.status === "failed";
+  const ended = terminal ? Date.parse(record.updated_at) : Date.now();
+  if (!Number.isFinite(started) || !Number.isFinite(ended)) return null;
+  return Math.max(0, (ended - started) / 1000);
+}
+
+function RunTiming({ session, job }: { session: Session | null; job: Job | null }) {
+  return (
+    <div className="run-timing" aria-label="任务耗时">
+      {session && <div><span>预处理耗时</span><strong>{formatDuration(recordDuration(session))}</strong></div>}
+      {job && <div><span>抽帧耗时</span><strong>{formatDuration(recordDuration(job))}</strong></div>}
+    </div>
+  );
+}
+
 function ParameterSummary({
   algorithm,
   parameters,
@@ -268,6 +298,7 @@ export function ResultView({ job, currentSession, manifest, clipModels, vlmProfi
           <div className="empty-orbit" />
           <h2>视频已准备完成</h2>
           <p>候选帧和特征已经缓存好了。现在可以在左侧连续输入 query，每次都会直接复用同一个视频会话。</p>
+          <p className="standalone-timing">预处理耗时：<strong>{formatDuration(recordDuration(currentSession))}</strong></p>
         </section>
       );
     }
@@ -283,6 +314,7 @@ export function ResultView({ job, currentSession, manifest, clipModels, vlmProfi
             <h2>{currentSession.stage}</h2>
             <p className="state-query">“{currentSession.original_filename}”</p>
             <p>{currentSession.algorithm === "vsi" ? "视频信息和字幕正在预处理，完成后就可以开始连续提问。" : "候选帧和特征正在缓存，完成后就可以开始连续提问。"}</p>
+            <p className="standalone-timing">预处理已用时：<strong>{formatDuration(recordDuration(currentSession))}</strong></p>
             <div className="large-progress"><i style={{ width: `${currentSession.progress * 100}%` }} /></div>
           </div>
         </section>
@@ -303,6 +335,7 @@ export function ResultView({ job, currentSession, manifest, clipModels, vlmProfi
           <div className="large-progress"><i style={{ width: `${job.progress * 100}%` }} /></div>
         </div>
         <ParameterSummary algorithm={job.algorithm} parameters={job.parameters} clipModels={clipModels} />
+        <RunTiming session={currentSession} job={job} />
         {(job.status === "failed" || job.status === "succeeded") && (
           <div className="delete-row">
             <DeleteTaskButton job={job} deleting={deleting} onDelete={onDelete} />
@@ -335,6 +368,7 @@ export function ResultView({ job, currentSession, manifest, clipModels, vlmProfi
       </div>
 
       <ParameterSummary algorithm={job.algorithm} parameters={job.parameters} clipModels={clipModels} />
+      <RunTiming session={currentSession} job={job} />
 
       <div className="summary-grid">
         <div><span>已选帧</span><strong>{manifest.summary.selected_keyframes}</strong><small>/ 请求 {manifest.summary.requested_keyframes}</small></div>
@@ -427,6 +461,7 @@ export function ResultView({ job, currentSession, manifest, clipModels, vlmProfi
                 使用 {vlmAnswer.used_frame_count}/{vlmAnswer.source_frame_count} 帧
                 {vlmAnswer.frames_limited ? "（已按时间均匀缩减）" : ""}
               </span>
+              <span>VLM 回答耗时：{formatDuration(vlmAnswer.generation_duration_seconds)}</span>
               <time dateTime={vlmAnswer.created_at}>
                 {new Date(vlmAnswer.created_at).toLocaleString()}
               </time>

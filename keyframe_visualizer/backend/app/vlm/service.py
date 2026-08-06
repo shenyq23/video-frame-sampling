@@ -4,6 +4,7 @@ import base64
 import io
 import json
 import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Sequence
@@ -38,6 +39,7 @@ class VlmAnswerService:
         profile_id: str,
         media_roots: Sequence[Path] | None = None,
     ) -> dict[str, Any]:
+        started_at = time.perf_counter()
         profile = self._profile(profile_id)
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         frames = self._frames(manifest, frame_set)
@@ -70,6 +72,7 @@ class VlmAnswerService:
         appid = self._required_environment(config, "appid_env")
         secret_key = self._required_environment(config, "secret_key_env")
         answer = MepVlmClient(config, appid, secret_key).execute(request_data)
+        generation_duration_seconds = time.perf_counter() - started_at
 
         result = {
             "schema_version": "1.0",
@@ -81,6 +84,7 @@ class VlmAnswerService:
             "frame_set_name": FRAME_SET_NAMES[frame_set],
             "query": query,
             "answer": answer,
+            "generation_duration_seconds": generation_duration_seconds,
             "source_frame_count": len(frames),
             "used_frame_count": len(used_frames),
             "frames_limited": len(used_frames) < len(frames),
