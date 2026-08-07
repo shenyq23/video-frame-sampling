@@ -40,6 +40,7 @@ from .settings import (
 )
 from .storage import JobStore, SessionStore, TERMINAL_STATUSES
 from .sessions import VideoSessionManager
+from .video_reader import release_video
 from .vlm.client import VlmRequestError
 from .vlm.service import VlmAnswerService
 
@@ -147,7 +148,7 @@ def _delete_with_retries(path: Path, *, is_directory: bool, label: str) -> None:
                 windows_error = getattr(error, "winerror", None)
                 reason = (
                     "文件仍被浏览器或其他程序占用"
-                    if windows_error in {32, 33}
+                    if windows_error in {5, 32, 33}
                     else "没有权限删除文件"
                 )
                 raise HTTPException(
@@ -167,6 +168,31 @@ def _delete_with_retries(path: Path, *, is_directory: bool, label: str) -> None:
             time.sleep(DELETE_RETRY_DELAYS_SECONDS[attempt])
 
 
+def _move_with_retries(source: Path, target: Path, *, label: str) -> None:
+    """Move a managed path, tolerating short-lived Windows file handles."""
+    for attempt in range(len(DELETE_RETRY_DELAYS_SECONDS) + 1):
+        try:
+            source.replace(target)
+            return
+        except FileNotFoundError:
+            if not source.exists():
+                return
+            raise
+        except OSError as error:
+            if attempt >= len(DELETE_RETRY_DELAYS_SECONDS):
+                windows_error = getattr(error, "winerror", None)
+                locked = isinstance(error, PermissionError) or windows_error in {5, 32, 33}
+                reason = "文件仍被浏览器、视频解码器或其他程序占用" if locked else str(error)
+                raise HTTPException(
+                    status_code=423 if locked else 409,
+                    detail=(
+                        f"无法清除{label}：{reason}。请关闭正在播放该视频的页面或程序后重试。"
+                        f"路径：{source}"
+                    ),
+                ) from error
+            time.sleep(DELETE_RETRY_DELAYS_SECONDS[attempt])
+
+
 def _stage_session_paths_for_delete(
     session_id: str,
     session_dir: Path,
@@ -182,9 +208,9 @@ def _stage_session_paths_for_delete(
             if not source.exists():
                 continue
             target = batch_dir / name
-            source.replace(target)
+            _move_with_retries(source, target, label="视频会话数据")
             staged.append((source, target))
-    except OSError as error:
+    except (OSError, HTTPException) as error:
         rollback_succeeded = True
         for source, target in reversed(staged):
             try:
@@ -195,10 +221,13 @@ def _stage_session_paths_for_delete(
                 traceback.print_exc()
         if rollback_succeeded:
             shutil.rmtree(batch_dir, ignore_errors=True)
+        if isinstance(error, HTTPException):
+            raise error
         windows_error = getattr(error, "winerror", None)
-        reason = "文件仍被浏览器或其他程序占用" if windows_error in {32, 33} else str(error)
+        locked = isinstance(error, PermissionError) or windows_error in {5, 32, 33}
+        reason = "文件仍被浏览器、视频解码器或其他程序占用" if locked else str(error)
         raise HTTPException(
-            status_code=423 if windows_error in {32, 33} else 409,
+            status_code=423 if locked else 409,
             detail=f"无法清除视频会话：{reason}。请关闭正在播放该视频的页面或程序后重试。",
         ) from error
     if not staged:
@@ -429,6 +458,8 @@ def delete_session(session_id: str) -> Response:
             status_code=409,
             detail="这个视频会话仍有排队中或运行中的 query，请等待任务结束后重试",
         )
+
+    release_video(Path(row["video_path"]))
 
     session_dir = _task_owned_path(row["session_dir"], SESSIONS_DIR, "video session")
     job_paths = [
