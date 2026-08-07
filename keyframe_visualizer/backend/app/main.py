@@ -4,6 +4,7 @@ import asyncio
 import json
 import re
 import shutil
+import threading
 import time
 import traceback
 import uuid
@@ -253,10 +254,51 @@ def _purge_staged_paths(staged: list[tuple[Path, Path]]) -> None:
             traceback.print_exc()
 
 
+def _cleanup_paths(paths: list[Path], marker: Path | None = None) -> None:
+    """Retry deletion of paths that were still open when a session was removed."""
+    deadline = time.monotonic() + 300
+    while True:
+        for path in paths:
+            if path.exists():
+                shutil.rmtree(path, ignore_errors=True)
+        remaining = [path for path in paths if path.exists()]
+        if not remaining:
+            if marker is not None:
+                marker.unlink(missing_ok=True)
+            return
+        if time.monotonic() >= deadline:
+            return
+        time.sleep(1.0)
+
+
+def _start_cleanup(paths: list[Path], marker: Path) -> None:
+    threading.Thread(
+        target=_cleanup_paths,
+        args=(paths, marker),
+        name="session-cleanup",
+        daemon=True,
+    ).start()
+
+
+def _schedule_cleanup(paths: list[Path]) -> None:
+    TRASH_DIR.mkdir(parents=True, exist_ok=True)
+    marker = TRASH_DIR / f"pending-{uuid.uuid4().hex}.json"
+    marker.write_text(json.dumps([str(path) for path in paths], ensure_ascii=False), encoding="utf-8")
+    _start_cleanup(paths, marker)
+
+
 def _cleanup_delete_tombstones() -> None:
     if not TRASH_DIR.is_dir():
         return
     for path in TRASH_DIR.iterdir():
+        if path.is_file() and path.name.startswith("pending-") and path.suffix == ".json":
+            try:
+                paths = [Path(value) for value in json.loads(path.read_text(encoding="utf-8"))]
+            except (OSError, TypeError, ValueError):
+                path.unlink(missing_ok=True)
+                continue
+            _start_cleanup(paths, path)
+            continue
         if path.is_dir() and (path / ".committed").is_file():
             shutil.rmtree(path, ignore_errors=True)
         elif path.is_file():
@@ -466,7 +508,19 @@ def delete_session(session_id: str) -> Response:
         (str(job["id"]), _task_owned_path(job["output_dir"], RUNS_DIR, "run output"))
         for job in session_jobs
     ]
-    staged = _stage_session_paths_for_delete(session_id, session_dir, job_paths)
+    managed_paths = [session_dir, *(path for _, path in job_paths)]
+    try:
+        staged = _stage_session_paths_for_delete(session_id, session_dir, job_paths)
+    except HTTPException as error:
+        if error.status_code != 423:
+            raise
+        # Windows may refuse to rename a directory while the browser still owns
+        # a child video handle. Remove the logical records now and clean files
+        # asynchronously as soon as the handle is released.
+        if not session_store.delete_with_jobs(session_id):
+            raise HTTPException(status_code=500, detail="删除视频会话数据库记录失败") from error
+        _schedule_cleanup(managed_paths)
+        return Response(status_code=204)
     try:
         if not session_store.delete_with_jobs(session_id):
             raise RuntimeError("视频会话数据库记录不存在")
