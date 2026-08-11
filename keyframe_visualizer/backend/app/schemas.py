@@ -62,7 +62,7 @@ class VSIParameters(BaseModel):
     samples_per_round: int = Field(default=16, ge=1, le=10000)
     text_weight: float = Field(default=0.3, ge=0, le=1, allow_inf_nan=False)
     model: str = "yolov8s-worldv2.pt"
-    seed: int = 0
+    seed: int = Field(default=0, ge=0)
     save_uniform_baseline: bool = True
     save_candidate_frames: bool = True
 

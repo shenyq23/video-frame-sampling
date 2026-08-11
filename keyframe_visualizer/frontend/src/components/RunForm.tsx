@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AlgorithmMetadata, ClipModel, RunParameters, Session } from "../types";
+import type { NumericSpecMap } from "../numeric";
+import {
+  numericDefaults,
+  numericInputDefaults,
+  numericInputsFrom,
+  resolveNumericFields,
+} from "../numeric";
+import { NumberField } from "./NumberField";
 
 interface Props {
   algorithm?: AlgorithmMetadata;
@@ -13,22 +21,38 @@ interface Props {
   onPreparingNewSessionChange: (preparing: boolean) => void;
 }
 
+// Bounds mirror AKSParameters in backend/app/schemas.py.
+const sessionNumericSpecs = {
+  sample_interval: {
+    label: "候选间隔（秒）",
+    kind: "decimal",
+    default: 1,
+    min: 0,
+    exclusiveMin: true,
+    hint: "支持任意正数；实际间隔会对齐到视频帧。",
+  },
+  batch_size: { label: "Batch size", kind: "integer", default: 16, min: 1, max: 256 },
+  decode_threads: { label: "解码线程", kind: "integer", default: 2, min: 1, max: 32 },
+  jpeg_quality: { label: "缓存 JPEG 质量", kind: "integer", default: 92, min: 1, max: 100 },
+} satisfies NumericSpecMap;
+
+const queryNumericSpecs = {
+  max_num_frames: { label: "目标帧数", kind: "integer", default: 32, min: 1, max: 512 },
+  threshold: { label: "t1 threshold", kind: "decimal", default: 0.8 },
+  std_threshold: { label: "t2 std threshold", kind: "decimal", default: -100 },
+  max_depth: { label: "最大深度", kind: "integer", default: 5, min: 0, max: 16 },
+} satisfies NumericSpecMap;
+
 const defaults: RunParameters = {
+  ...numericDefaults(sessionNumericSpecs),
+  ...numericDefaults(queryNumericSpecs),
   aks_mode: "robust",
-  max_num_frames: 32,
   candidate_sampling: "interval",
-  sample_interval: 1,
   feature_backend: "clip",
   feature_profile: null,
   clip_model_id: null,
   model_name: "openai/clip-vit-base-patch32",
   device: "auto",
-  batch_size: 16,
-  decode_threads: 2,
-  threshold: 0.8,
-  std_threshold: -100,
-  max_depth: 5,
-  jpeg_quality: 92,
   save_uniform_baseline: true,
   save_candidate_frames: true,
 };
@@ -73,8 +97,8 @@ export function RunForm({
 }: Props) {
   const [video, setVideo] = useState<File | null>(null);
   const [query, setQuery] = useState("");
-  const [maxFramesInput, setMaxFramesInput] = useState("");
-  const [sampleIntervalInput, setSampleIntervalInput] = useState("");
+  const [sessionNumbers, setSessionNumbers] = useState(() => numericInputDefaults(sessionNumericSpecs));
+  const [queryNumbers, setQueryNumbers] = useState(() => numericInputDefaults(queryNumericSpecs));
   const [parameters, setParameters] = useState<RunParameters>(defaults);
   const [advanced, setAdvanced] = useState(false);
   const [error, setError] = useState("");
@@ -88,10 +112,7 @@ export function RunForm({
       ...current,
       ...currentSession.parameters,
     }) as RunParameters);
-    const interval = currentSession.parameters.sample_interval;
-    setSampleIntervalInput(
-      typeof interval === "number" && Number.isFinite(interval) ? String(interval) : "",
-    );
+    setSessionNumbers(numericInputsFrom(sessionNumericSpecs, currentSession.parameters));
     setQuery("");
     setError("");
   }, [currentSession?.id]);
@@ -107,19 +128,26 @@ export function RunForm({
   const update = <K extends keyof RunParameters>(key: K, value: RunParameters[K]) =>
     setParameters((current) => ({ ...current, [key]: value }));
 
+  const updateSessionNumber = (key: string, value: string) =>
+    setSessionNumbers((current) => ({ ...current, [key]: value }));
+
+  const updateQueryNumber = (key: string, value: string) =>
+    setQueryNumbers((current) => ({ ...current, [key]: value }));
+
   const prepareSession = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!video) {
       setError("请先选择视频。");
       return;
     }
-    const parsedSampleInterval = Number(sampleIntervalInput);
-    if (parameters.candidate_sampling === "interval" && (
-      !sampleIntervalInput.trim() ||
-      !Number.isFinite(parsedSampleInterval) ||
-      parsedSampleInterval <= 0
-    )) {
-      setError("候选间隔必须是大于 0 的有限数字。");
+    // The interval box is disabled in int(FPS) mode, so leave it unvalidated.
+    const resolved = resolveNumericFields(
+      sessionNumericSpecs,
+      sessionNumbers,
+      parameters.candidate_sampling === "original" ? ["sample_interval"] : [],
+    );
+    if (!resolved.ok) {
+      setError(resolved.message);
       return;
     }
     if (parameters.feature_backend !== "clip" && !parameters.feature_profile) {
@@ -132,13 +160,7 @@ export function RunForm({
       return;
     }
     setError("");
-    await onPrepareSession(video, {
-      ...parameters,
-      sample_interval:
-        parameters.candidate_sampling === "interval"
-          ? parsedSampleInterval
-          : parameters.sample_interval,
-    });
+    await onPrepareSession(video, { ...parameters, ...resolved.values });
     setVideo(null);
   };
 
@@ -152,27 +174,19 @@ export function RunForm({
       setError("请输入 query。");
       return;
     }
-    const parsedMaxFrames = Number(maxFramesInput);
-    if (
-      !maxFramesInput.trim() ||
-      !Number.isInteger(parsedMaxFrames) ||
-      parsedMaxFrames < 1 ||
-      parsedMaxFrames > 512
-    ) {
-      setError("目标帧数必须是 1～512 之间的整数。");
+    const resolved = resolveNumericFields(queryNumericSpecs, queryNumbers);
+    if (!resolved.ok) {
+      setError(resolved.message);
       return;
     }
-    const locked = { ...parameters };
+    const locked = { ...parameters, ...resolved.values };
     for (const key of sessionLockedKeys) {
       if (currentSession.parameters[key] !== undefined) {
         locked[key] = currentSession.parameters[key] as never;
       }
     }
     setError("");
-    const submitted = await onRunQuery(query.trim(), {
-      ...locked,
-      max_num_frames: parsedMaxFrames,
-    });
+    const submitted = await onRunQuery(query.trim(), locked);
     if (submitted) setQuery("");
   };
 
@@ -233,19 +247,12 @@ export function RunForm({
               <option value="original">原仓库 int(FPS)</option>
             </select>
           </label>
-          <label className="field">
-            <span>候选间隔（秒）</span>
-            <input
-              type="text"
-              inputMode="decimal"
-              autoComplete="off"
-              disabled={parameters.candidate_sampling === "original"}
-              value={sampleIntervalInput}
-              placeholder="例如：1.0"
-              onChange={(e) => setSampleIntervalInput(e.target.value)}
-            />
-            <small>支持任意正数；实际间隔会对齐到视频帧。</small>
-          </label>
+          <NumberField
+            spec={sessionNumericSpecs.sample_interval}
+            value={sessionNumbers.sample_interval}
+            onChange={(value) => updateSessionNumber("sample_interval", value)}
+            disabled={parameters.candidate_sampling === "original"}
+          />
           <label className="field">
             <span>特征模型</span>
             <select value={parameters.feature_backend} onChange={(e) => {
@@ -303,10 +310,22 @@ export function RunForm({
 
         {advanced && (
           <div className="field-grid advanced-fields">
-            <label className="field"><span>Batch size</span><input type="number" min="1" max="256" value={parameters.batch_size} onChange={(e) => update("batch_size", Number(e.target.value))} /></label>
+            <NumberField
+              spec={sessionNumericSpecs.batch_size}
+              value={sessionNumbers.batch_size}
+              onChange={(value) => updateSessionNumber("batch_size", value)}
+            />
             <label className="field"><span>设备</span><select value={parameters.device} onChange={(e) => update("device", e.target.value as RunParameters["device"])}><option value="auto">Auto</option><option value="cuda">CUDA</option><option value="mps">MPS</option><option value="cpu">CPU</option></select></label>
-            <label className="field"><span>解码线程</span><input type="number" min="1" max="32" value={parameters.decode_threads} onChange={(e) => update("decode_threads", Number(e.target.value))} /></label>
-            <label className="field"><span>缓存 JPEG 质量</span><input type="number" min="1" max="100" value={parameters.jpeg_quality} onChange={(e) => update("jpeg_quality", Number(e.target.value))} /></label>
+            <NumberField
+              spec={sessionNumericSpecs.decode_threads}
+              value={sessionNumbers.decode_threads}
+              onChange={(value) => updateSessionNumber("decode_threads", value)}
+            />
+            <NumberField
+              spec={sessionNumericSpecs.jpeg_quality}
+              value={sessionNumbers.jpeg_quality}
+              onChange={(value) => updateSessionNumber("jpeg_quality", value)}
+            />
           </div>
         )}
 
@@ -388,17 +407,11 @@ export function RunForm({
             <option value="original">Original · 论文配额</option>
           </select>
         </label>
-        <label className="field">
-          <span>目标帧数</span>
-          <input
-            type="text"
-            inputMode="numeric"
-            autoComplete="off"
-            value={maxFramesInput}
-            placeholder="例如：32"
-            onChange={(e) => setMaxFramesInput(e.target.value)}
-          />
-        </label>
+        <NumberField
+          spec={queryNumericSpecs.max_num_frames}
+          value={queryNumbers.max_num_frames}
+          onChange={(value) => updateQueryNumber("max_num_frames", value)}
+        />
       </div>
 
       <button className="text-button" type="button" onClick={() => setAdvanced((value) => !value)} aria-expanded={advanced}>
@@ -407,9 +420,21 @@ export function RunForm({
 
       {advanced && (
         <div className="field-grid advanced-fields">
-          <label className="field"><span>t1 threshold</span><input type="number" step="0.05" value={parameters.threshold} onChange={(e) => update("threshold", Number(e.target.value))} /></label>
-          <label className="field"><span>t2 std threshold</span><input type="number" step="0.1" value={parameters.std_threshold} onChange={(e) => update("std_threshold", Number(e.target.value))} /></label>
-          <label className="field"><span>最大深度</span><input type="number" min="0" max="16" value={parameters.max_depth} onChange={(e) => update("max_depth", Number(e.target.value))} /></label>
+          <NumberField
+            spec={queryNumericSpecs.threshold}
+            value={queryNumbers.threshold}
+            onChange={(value) => updateQueryNumber("threshold", value)}
+          />
+          <NumberField
+            spec={queryNumericSpecs.std_threshold}
+            value={queryNumbers.std_threshold}
+            onChange={(value) => updateQueryNumber("std_threshold", value)}
+          />
+          <NumberField
+            spec={queryNumericSpecs.max_depth}
+            value={queryNumbers.max_depth}
+            onChange={(value) => updateQueryNumber("max_depth", value)}
+          />
           <label className="check-field"><input type="checkbox" checked={parameters.save_uniform_baseline} onChange={(e) => update("save_uniform_baseline", e.target.checked)} /><span>显示同数量均匀抽帧</span></label>
           <label className="check-field"><input type="checkbox" checked={parameters.save_candidate_frames} onChange={(e) => update("save_candidate_frames", e.target.checked)} /><span>显示全部候选帧</span></label>
         </div>
