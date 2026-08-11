@@ -19,6 +19,8 @@ interface Props {
   onRunQuery: (query: string, parameters: RunParameters) => Promise<boolean>;
   onUploadClipModel: (archive: File, name: string) => Promise<ClipModel>;
   onPreparingNewSessionChange: (preparing: boolean) => void;
+  /** A VLM service is configured, so a query run also produces an answer. */
+  vlmReady: boolean;
 }
 
 // Bounds mirror AKSParameters in backend/app/schemas.py.
@@ -94,6 +96,7 @@ export function RunForm({
   onRunQuery,
   onUploadClipModel,
   onPreparingNewSessionChange,
+  vlmReady,
 }: Props) {
   const [video, setVideo] = useState<File | null>(null);
   const [query, setQuery] = useState("");
@@ -441,7 +444,10 @@ export function RunForm({
       )}
 
       {error && <p className="form-error" role="alert">{error}</p>}
-      <button className="primary-button" type="submit" disabled={busy}>{busy ? "正在提交…" : "运行 Query 抽帧"}</button>
+      <button className="primary-button" type="submit" disabled={busy}>
+        {busy ? "正在提交…" : vlmReady ? "抽帧并生成 VLM 回答" : "运行 Query 抽帧"}
+      </button>
+      {vlmReady && <p className="submit-hint">抽帧完成后会自动把抽出帧交给 VLM 回答同一条 Query。</p>}
     </form>
   );
 }

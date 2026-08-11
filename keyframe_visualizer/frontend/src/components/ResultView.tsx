@@ -20,6 +20,9 @@ interface Props {
   vlmProfiles: VlmProfile[];
   deleting: boolean;
   onDelete: (job: Job) => Promise<void>;
+  /** Job whose result should chain straight into a VLM answer, if any. */
+  autoVlmJobId: string | null;
+  onAutoVlmStarted: () => void;
 }
 
 type FrameSetKey = "selected" | "uniform" | "candidates";
@@ -191,7 +194,17 @@ function normalizeSelectedFrames(manifest: Manifest): FrameRecord[] {
   }));
 }
 
-export function ResultView({ job, currentSession, manifest, clipModels, vlmProfiles, deleting, onDelete }: Props) {
+export function ResultView({
+  job,
+  currentSession,
+  manifest,
+  clipModels,
+  vlmProfiles,
+  deleting,
+  onDelete,
+  autoVlmJobId,
+  onAutoVlmStarted,
+}: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [frameSet, setFrameSet] = useState<FrameSetKey>("selected");
   const [vlmQuery, setVlmQuery] = useState("");
@@ -199,6 +212,8 @@ export function ResultView({ job, currentSession, manifest, clipModels, vlmProfi
   const [vlmAnswer, setVlmAnswer] = useState<VlmAnswer | null>(null);
   const [vlmBusy, setVlmBusy] = useState(false);
   const [vlmError, setVlmError] = useState("");
+  // The auto-run must not fire before we know whether an answer already exists.
+  const [savedAnswerChecked, setSavedAnswerChecked] = useState(false);
 
   useEffect(() => {
     setFrameSet("selected");
@@ -220,6 +235,7 @@ export function ResultView({ job, currentSession, manifest, clipModels, vlmProfi
     let active = true;
     setVlmAnswer(null);
     setVlmError("");
+    setSavedAnswerChecked(false);
     if (job?.status === "succeeded") {
       api.savedVlmAnswer(job.id, frameSet)
         .then((answer) => {
@@ -229,8 +245,13 @@ export function ResultView({ job, currentSession, manifest, clipModels, vlmProfi
             setVlmQuery(answer.query);
             setVlmProfile(answer.profile_id);
           }
+          setSavedAnswerChecked(true);
         })
-        .catch((error: Error) => active && setVlmError(error.message));
+        .catch((error: Error) => {
+          if (!active) return;
+          setVlmError(error.message);
+          setSavedAnswerChecked(true);
+        });
     }
     return () => { active = false; };
   }, [job?.id, job?.status, frameSet]);
@@ -291,6 +312,37 @@ export function ResultView({ job, currentSession, manifest, clipModels, vlmProfi
     }
   };
 
+  const autoRunPending = Boolean(job && autoVlmJobId === job.id);
+
+  // "抽帧并生成 VLM 回答" submits one job; the answer starts as soon as the
+  // frames and the saved-answer check are both in.
+  useEffect(() => {
+    if (!autoRunPending || !job) return;
+    if (job.status === "failed") {
+      onAutoVlmStarted();
+      return;
+    }
+    if (job.status !== "succeeded" || !manifest || !savedAnswerChecked) return;
+    if (vlmBusy) return;
+    // Whatever happens next, this job has had its one shot at auto-running.
+    onAutoVlmStarted();
+    if (vlmAnswer || vlmError) return;
+    if (!vlmProfile || !vlmQuery.trim() || !frameSets?.selected.frames.length) return;
+    void askVlm();
+  }, [
+    autoRunPending,
+    job?.id,
+    job?.status,
+    manifest,
+    savedAnswerChecked,
+    vlmBusy,
+    vlmAnswer,
+    vlmError,
+    vlmProfile,
+    vlmQuery,
+    frameSets,
+  ]);
+
   if (!job) {
     if (currentSession?.status === "succeeded") {
       return (
@@ -332,6 +384,7 @@ export function ResultView({ job, currentSession, manifest, clipModels, vlmProfi
           <h2>{job.stage}</h2>
           <p className="state-query">“{job.query}”</p>
           <p>{job.status === "failed" ? job.error : `${job.original_filename} 正在处理，页面会自动更新。`}</p>
+          {autoRunPending && job.status !== "failed" && <p className="standalone-timing">抽帧完成后会自动生成 VLM 回答。</p>}
           <div className="large-progress"><i style={{ width: `${job.progress * 100}%` }} /></div>
         </div>
         <ParameterSummary algorithm={job.algorithm} parameters={job.parameters} clipModels={clipModels} />
@@ -367,154 +420,180 @@ export function ResultView({ job, currentSession, manifest, clipModels, vlmProfi
         </div>
       </div>
 
-      <ParameterSummary algorithm={job.algorithm} parameters={job.parameters} clipModels={clipModels} />
-      <RunTiming session={currentSession} job={job} />
-
-      <div className="summary-grid">
-        <div><span>已选帧</span><strong>{manifest.summary.selected_keyframes}</strong><small>/ 请求 {manifest.summary.requested_keyframes}</small></div>
-        <div><span>{job.algorithm === "vsi" ? "访问帧" : "候选帧"}</span><strong>{manifest.summary.candidate_frames}</strong><small>{job.algorithm === "vsi" ? "YOLO-World 实际检测" : manifest.candidate_sampling?.interval_seconds ? `请求 ${manifest.candidate_sampling.interval_seconds}s · 实际 ${manifest.candidate_sampling.effective_interval_seconds?.toFixed(6) ?? "—"}s` : "原始采样"}</small></div>
-        <div><span>视频时长</span><strong>{formatTime(manifest.video.duration_seconds)}</strong><small>{manifest.video.fps.toFixed(2)} FPS</small></div>
-      </div>
-
-      <video ref={videoRef} className="video-player" controls preload="metadata" src={api.videoUrl(job.id)} />
-      <ScoreChart candidates={manifest.candidates} algorithm={job.algorithm} />
-
-      <div className="frame-set-toolbar">
-        <div className="frame-tabs" role="group" aria-label="切换帧集合">
-          {tabs.map((tab) => {
-            const entry = frameSets?.[tab.key];
-            const available = Boolean(entry?.available);
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                className={frameSet === tab.key ? "active" : ""}
-                aria-pressed={frameSet === tab.key}
-                disabled={!available}
-                onClick={() => setFrameSet(tab.key)}
-              >
-                {tab.label}<span>{entry?.frames.length ?? 0}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <section className="vlm-panel" aria-labelledby="vlm-title">
-        <div className="vlm-heading">
-          <div>
-            <p className="eyebrow">MULTI-FRAME VLM</p>
-            <h3 id="vlm-title">基于当前帧集合回答 Query</h3>
+      <div className="result-main">
+        <div className="result-frames-pane">
+          <div className="frame-set-toolbar">
+            <div className="frame-tabs" role="group" aria-label="切换帧集合">
+              {tabs.map((tab) => {
+                const entry = frameSets?.[tab.key];
+                const available = Boolean(entry?.available);
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    className={frameSet === tab.key ? "active" : ""}
+                    aria-pressed={frameSet === tab.key}
+                    disabled={!available}
+                    onClick={() => setFrameSet(tab.key)}
+                  >
+                    {tab.label}<span>{entry?.frames.length ?? 0}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <span>当前使用：{tabs.find((tab) => tab.key === frameSet)?.label}</span>
-        </div>
-        <div className="vlm-fields">
-          <label className="field">
-            <span>VLM 服务</span>
-            <select
-              value={vlmProfile}
-              onChange={(event) => setVlmProfile(event.target.value)}
-              disabled={vlmBusy}
-            >
-              {!vlmProfiles.length && <option value="">没有 VLM 配置</option>}
-              {vlmProfiles.filter((profile) => profile.enabled).map((profile) => (
-                <option
-                  key={profile.id}
-                  value={profile.id}
-                  disabled={!profile.credentials_ready}
-                >
-                  {profile.name}{profile.credentials_ready ? "" : "（缺少环境变量）"}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field vlm-query-field">
-            <span>VLM Query</span>
-            <textarea
-              rows={3}
-              value={vlmQuery}
-              onChange={(event) => setVlmQuery(event.target.value)}
-              disabled={vlmBusy}
-              placeholder="例如：视频中的人物正在做什么？"
-            />
-          </label>
-        </div>
-        <div className="vlm-submit-row">
-          <p>
-            当前集合共 {activeFrames.length} 帧；服务会按时间顺序读取，并在超过配置上限时均匀缩减。
-          </p>
-          <button
-            className="primary-button vlm-submit"
-            type="button"
-            disabled={vlmBusy || !vlmProfile || !vlmQuery.trim() || activeFrames.length === 0}
-            onClick={() => void askVlm()}
-          >
-            {vlmBusy ? "VLM 正在分析…" : vlmAnswer ? "重新生成回答" : "生成 VLM 回答"}
-          </button>
-        </div>
-        {vlmError && <p className="vlm-error" role="alert">{vlmError}</p>}
-        {vlmAnswer && (
-          <article className="vlm-answer" aria-live="polite">
-            <div className="vlm-answer-meta">
-              <strong>{vlmAnswer.profile_name}</strong>
-              <span>
-                使用 {vlmAnswer.used_frame_count}/{vlmAnswer.source_frame_count} 帧
-                {vlmAnswer.frames_limited ? "（已按时间均匀缩减）" : ""}
-              </span>
-              <span>VLM 回答耗时：{formatDuration(vlmAnswer.generation_duration_seconds)}</span>
-              <time dateTime={vlmAnswer.created_at}>
-                {new Date(vlmAnswer.created_at).toLocaleString()}
-              </time>
-            </div>
-            <p className="vlm-answer-query">“{vlmAnswer.query}”</p>
-            <div className="vlm-answer-text">{vlmAnswer.answer}</div>
-            <div className="vlm-evidence" aria-label="VLM 使用的关键帧">
-              {vlmAnswer.used_frames.map((frame, index) => (
-                <figure key={`${frame.file}-${index}`}>
-                  <img
-                    src={api.mediaUrl(job.id, frame.file)}
-                    alt={`VLM 证据帧 ${index + 1}，时间 ${frame.timestamp_seconds ?? 0} 秒`}
-                    loading="lazy"
-                  />
-                  <figcaption>#{index + 1} · {formatTime(frame.timestamp_seconds ?? 0)}</figcaption>
-                </figure>
-              ))}
-            </div>
-          </article>
-        )}
-      </section>
 
-      {activeFrames.length ? (
-        <div className="frame-grid">
-          {activeFrames.map((frame) => (
-            <article className="frame-card" key={`${frameSet}-${frame.order}-${frame.original_frame_index}`}>
-              <div className="frame-image-wrap">
-                <img src={api.mediaUrl(job.id, frame.file)} alt={`${tabs.find((tab) => tab.key === frameSet)?.label}第 ${frame.order} 帧，时间 ${formatTime(frame.timestamp_seconds)}`} loading="lazy" />
-                <span className="frame-order">{String(frame.order).padStart(2, "0")}</span>
-                <span className="frame-time">{formatTime(frame.timestamp_seconds)}</span>
-              </div>
-              <dl>
-                <div><dt>原视频帧</dt><dd>{frame.original_frame_index}</dd></div>
-                <div><dt>{job.algorithm === "vsi" ? "访问序号" : "候选序号"}</dt><dd>{frame.candidate_order ? `#${frame.candidate_order}` : "—"}</dd></div>
-                <div><dt>{job.algorithm === "vsi" ? "融合分数" : "相关性"}</dt><dd>{typeof frame.relevance_score === "number" ? frame.relevance_score.toFixed(4) : "—"}</dd></div>
-                {job.algorithm === "vsi" ? (
-                  <><div><dt>采样概率</dt><dd>{typeof frame.sampling_probability === "number" ? frame.sampling_probability.toFixed(6) : "—"}</dd></div><div><dt>访问顺序</dt><dd>{frame.visited_order ?? "—"}</dd></div></>
-                ) : frameSet === "selected" ? (
-                  <>
-                    {/* Temporarily hidden from the AKS selected-frame cards.
-                    <div><dt>Segment</dt><dd>{typeof frame.segment_id === "number" && frame.segment_id >= 0 ? `${frame.segment_id} · d${frame.segment_depth}` : "—"}</dd></div>
-                    */}
-                  </>
-                ) : (
-                  <div><dt>被 AKS 选中</dt><dd>{frame.selected_by_aks ? "是" : "否"}</dd></div>
-                )}
-              </dl>
-            </article>
-          ))}
+          {activeFrames.length ? (
+            <div className="frame-grid">
+              {activeFrames.map((frame) => (
+                <article className="frame-card" key={`${frameSet}-${frame.order}-${frame.original_frame_index}`}>
+                  <div className="frame-image-wrap">
+                    <img src={api.mediaUrl(job.id, frame.file)} alt={`${tabs.find((tab) => tab.key === frameSet)?.label}第 ${frame.order} 帧，时间 ${formatTime(frame.timestamp_seconds)}`} loading="lazy" />
+                    <span className="frame-order">{String(frame.order).padStart(2, "0")}</span>
+                    <span className="frame-time">{formatTime(frame.timestamp_seconds)}</span>
+                  </div>
+                  <dl>
+                    <div><dt>原视频帧</dt><dd>{frame.original_frame_index}</dd></div>
+                    <div><dt>{job.algorithm === "vsi" ? "访问序号" : "候选序号"}</dt><dd>{frame.candidate_order ? `#${frame.candidate_order}` : "—"}</dd></div>
+                    <div><dt>{job.algorithm === "vsi" ? "融合分数" : "相关性"}</dt><dd>{typeof frame.relevance_score === "number" ? frame.relevance_score.toFixed(4) : "—"}</dd></div>
+                    {job.algorithm === "vsi" ? (
+                      <><div><dt>采样概率</dt><dd>{typeof frame.sampling_probability === "number" ? frame.sampling_probability.toFixed(6) : "—"}</dd></div><div><dt>访问顺序</dt><dd>{frame.visited_order ?? "—"}</dd></div></>
+                    ) : frameSet === "selected" ? (
+                      <>
+                        {/* Temporarily hidden from the AKS selected-frame cards.
+                        <div><dt>Segment</dt><dd>{typeof frame.segment_id === "number" && frame.segment_id >= 0 ? `${frame.segment_id} · d${frame.segment_depth}` : "—"}</dd></div>
+                        */}
+                      </>
+                    ) : (
+                      <div><dt>被 AKS 选中</dt><dd>{frame.selected_by_aks ? "是" : "否"}</dd></div>
+                    )}
+                  </dl>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="frame-set-empty">该任务没有保存这组帧。旧任务需要重新运行后才能查看。</p>
+          )}
+
+          <ScoreChart candidates={manifest.candidates} algorithm={job.algorithm} />
         </div>
-      ) : (
-        <p className="frame-set-empty">该任务没有保存这组帧。旧任务需要重新运行后才能查看。</p>
-      )}
+
+        <section className="vlm-panel" aria-labelledby="vlm-title">
+          <div className="vlm-heading">
+            <div>
+              <p className="eyebrow">MULTI-FRAME VLM</p>
+              <h3 id="vlm-title">VLM 问答</h3>
+            </div>
+            <span>{tabs.find((tab) => tab.key === frameSet)?.label} · {activeFrames.length} 帧</span>
+          </div>
+
+          {vlmError && <p className="vlm-error" role="alert">{vlmError}</p>}
+
+          {vlmBusy ? (
+            <p className="vlm-pending" aria-live="polite">VLM 正在基于当前 {activeFrames.length} 帧生成回答…</p>
+          ) : vlmAnswer ? (
+            <article className="vlm-answer" aria-live="polite">
+              <div className="vlm-turn vlm-turn-question">
+                <span className="vlm-turn-tag">问</span>
+                <p>{vlmAnswer.query}</p>
+              </div>
+              <div className="vlm-turn vlm-turn-answer">
+                <span className="vlm-turn-tag">答</span>
+                <div className="vlm-answer-text">{vlmAnswer.answer}</div>
+              </div>
+              <div className="vlm-answer-meta">
+                <strong>{vlmAnswer.profile_name}</strong>
+                <span>
+                  使用 {vlmAnswer.used_frame_count}/{vlmAnswer.source_frame_count} 帧
+                  {vlmAnswer.frames_limited ? "（已按时间均匀缩减）" : ""}
+                </span>
+                <span>耗时 {formatDuration(vlmAnswer.generation_duration_seconds)}</span>
+                <time dateTime={vlmAnswer.created_at}>
+                  {new Date(vlmAnswer.created_at).toLocaleString()}
+                </time>
+              </div>
+              <div className="vlm-evidence" aria-label="VLM 使用的关键帧">
+                {vlmAnswer.used_frames.map((frame, index) => (
+                  <figure key={`${frame.file}-${index}`}>
+                    <img
+                      src={api.mediaUrl(job.id, frame.file)}
+                      alt={`VLM 证据帧 ${index + 1}，时间 ${frame.timestamp_seconds ?? 0} 秒`}
+                      loading="lazy"
+                    />
+                    <figcaption>#{index + 1} · {formatTime(frame.timestamp_seconds ?? 0)}</figcaption>
+                  </figure>
+                ))}
+              </div>
+            </article>
+          ) : (
+            <p className="vlm-empty">这组帧还没有 VLM 回答。展开下面的输入区可以选择服务并生成。</p>
+          )}
+
+          <details className="vlm-controls" open={!vlmAnswer && !vlmBusy}>
+            <summary>{vlmAnswer ? "换服务或改写 Query 重新回答" : "VLM 输入"}</summary>
+            <div className="vlm-fields">
+              <label className="field">
+                <span>VLM 服务</span>
+                <select
+                  value={vlmProfile}
+                  onChange={(event) => setVlmProfile(event.target.value)}
+                  disabled={vlmBusy}
+                >
+                  {!vlmProfiles.length && <option value="">没有 VLM 配置</option>}
+                  {vlmProfiles.filter((profile) => profile.enabled).map((profile) => (
+                    <option
+                      key={profile.id}
+                      value={profile.id}
+                      disabled={!profile.credentials_ready}
+                    >
+                      {profile.name}{profile.credentials_ready ? "" : "（缺少环境变量）"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field vlm-query-field">
+                <span>VLM Query</span>
+                <textarea
+                  rows={3}
+                  value={vlmQuery}
+                  onChange={(event) => setVlmQuery(event.target.value)}
+                  disabled={vlmBusy}
+                  placeholder="例如：视频中的人物正在做什么？"
+                />
+              </label>
+            </div>
+            <div className="vlm-submit-row">
+              <p>当前集合共 {activeFrames.length} 帧；服务会按时间顺序读取，并在超过配置上限时均匀缩减。</p>
+              <button
+                className="primary-button vlm-submit"
+                type="button"
+                disabled={vlmBusy || !vlmProfile || !vlmQuery.trim() || activeFrames.length === 0}
+                onClick={() => void askVlm()}
+              >
+                {vlmBusy ? "VLM 正在分析…" : vlmAnswer ? "重新生成回答" : "生成 VLM 回答"}
+              </button>
+            </div>
+          </details>
+        </section>
+      </div>
+
+      <details className="result-context" open>
+        <summary>相关信息</summary>
+
+        <div className="summary-grid">
+          <div><span>已选帧</span><strong>{manifest.summary.selected_keyframes}</strong><small>/ 请求 {manifest.summary.requested_keyframes}</small></div>
+          <div><span>{job.algorithm === "vsi" ? "访问帧" : "候选帧"}</span><strong>{manifest.summary.candidate_frames}</strong><small>{job.algorithm === "vsi" ? "YOLO-World 实际检测" : manifest.candidate_sampling?.interval_seconds ? `请求 ${manifest.candidate_sampling.interval_seconds}s · 实际 ${manifest.candidate_sampling.effective_interval_seconds?.toFixed(6) ?? "—"}s` : "原始采样"}</small></div>
+          <div><span>视频时长</span><strong>{formatTime(manifest.video.duration_seconds)}</strong><small>{manifest.video.fps.toFixed(2)} FPS</small></div>
+        </div>
+
+        <ParameterSummary algorithm={job.algorithm} parameters={job.parameters} clipModels={clipModels} />
+        <RunTiming session={currentSession} job={job} />
+
+        <div className="result-video">
+          <h3>原视频</h3>
+          <video ref={videoRef} className="video-player" controls preload="metadata" src={api.videoUrl(job.id)} />
+        </div>
+      </details>
     </section>
   );
 }

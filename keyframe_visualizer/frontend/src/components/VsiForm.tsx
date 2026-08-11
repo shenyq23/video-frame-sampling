@@ -17,6 +17,8 @@ interface Props {
   onPrepareSession: (video: File, parameters: VsiSessionParameters, subtitle: File | null) => Promise<void>;
   onRunQuery: (query: string, parameters: VsiQueryParameters) => Promise<boolean>;
   onPreparingNewSessionChange: (value: boolean) => void;
+  /** A VLM service is configured, so a query run also produces an answer. */
+  vlmReady: boolean;
 }
 
 // Bounds mirror VSIParameters in backend/app/schemas.py.
@@ -71,6 +73,7 @@ export function VsiForm({
   onPrepareSession,
   onRunQuery,
   onPreparingNewSessionChange,
+  vlmReady,
 }: Props) {
   const [video, setVideo] = useState<File | null>(null);
   const [subtitle, setSubtitle] = useState<File | null>(null);
@@ -238,7 +241,10 @@ export function VsiForm({
       <button className="text-button" type="button" onClick={() => setAdvanced((value) => !value)}>{advanced ? "收起高级参数" : "展开高级参数"}</button>
       {advanced && <div className="field-grid advanced-fields"><label className="field field-wide"><span>YOLO-World 模型</span><input value={parameters.model} onChange={(e) => update("model", e.target.value)} /></label><label className="check-field"><input type="checkbox" checked={parameters.save_uniform_baseline} onChange={(e) => update("save_uniform_baseline", e.target.checked)} /><span>显示同数量均匀抽帧</span></label><label className="check-field"><input type="checkbox" checked={parameters.save_candidate_frames} onChange={(e) => update("save_candidate_frames", e.target.checked)} /><span>显示 VSI 访问帧</span></label></div>}
       {error && <p className="form-error" role="alert">{error}</p>}
-      <button className="primary-button" type="submit" disabled={busy}>{busy ? "正在提交…" : "运行 VSI 抽帧"}</button>
+      <button className="primary-button" type="submit" disabled={busy}>
+        {busy ? "正在提交…" : vlmReady ? "抽帧并生成 VLM 回答" : "运行 VSI 抽帧"}
+      </button>
+      {vlmReady && <p className="submit-hint">抽帧完成后会自动把抽出帧交给 VLM 回答同一条 Query。</p>}
     </form>
   );
 }

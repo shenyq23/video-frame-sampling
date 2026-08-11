@@ -36,6 +36,8 @@ export default function App() {
   const [pendingSessionDelete, setPendingSessionDelete] = useState<Session | null>(null);
   const [globalError, setGlobalError] = useState("");
   const [activeAlgorithm, setActiveAlgorithm] = useState<AlgorithmId>("aks");
+  // Job submitted from the run form; its result view chains straight into VLM.
+  const [autoVlmJobId, setAutoVlmJobId] = useState<string | null>(null);
 
   const latestJobForSession = useCallback((items: Job[], sessionId: string | null) => {
     if (!sessionId) return null;
@@ -147,6 +149,7 @@ export default function App() {
       setJobs((current) => [job, ...current]);
       setSelected(job);
       setManifest(null);
+      setAutoVlmJobId(job.id);
       return true;
     } catch (error) {
       setGlobalError(error instanceof Error ? error.message : "提交 query 任务失败");
@@ -247,12 +250,14 @@ export default function App() {
     setCurrentSession(session);
     setSelected(latestJobForSession(jobs, session.id));
     setManifest(null);
+    setAutoVlmJobId(null);
   };
 
   const selectJob = (job: Job) => {
     if (job.algorithm === "aks" || job.algorithm === "vsi") setActiveAlgorithm(job.algorithm);
     setPreparingNewSession(false);
     setSelected(job);
+    setAutoVlmJobId((current) => (current === job.id ? current : null));
     if (job.session_id) {
       const session = sessions.find((item) => item.id === job.session_id);
       if (session) setCurrentSession(session);
@@ -263,6 +268,7 @@ export default function App() {
     setActiveAlgorithm(algorithm);
     setSelected(null);
     setManifest(null);
+    setAutoVlmJobId(null);
     const next = sessions.find((session) => session.algorithm === algorithm && session.status === "succeeded")
       ?? sessions.find((session) => session.algorithm === algorithm)
       ?? null;
@@ -274,6 +280,12 @@ export default function App() {
   const visibleSessions = useMemo(
     () => sessions.filter((session) => session.algorithm === activeAlgorithm),
     [sessions, activeAlgorithm],
+  );
+
+  // Only advertise the combined run when a VLM service can actually answer.
+  const vlmReady = useMemo(
+    () => vlmProfiles.some((profile) => profile.enabled && profile.credentials_ready),
+    [vlmProfiles],
   );
 
   return (
@@ -306,6 +318,7 @@ export default function App() {
               onRunQuery={(query, parameters) => runSessionQuery(query, parameters)}
               onUploadClipModel={uploadClipModel}
               onPreparingNewSessionChange={setPreparingNewSession}
+              vlmReady={vlmReady}
             />
           ) : (
             <VsiForm
@@ -316,6 +329,7 @@ export default function App() {
               onPrepareSession={(video, parameters, subtitle) => prepareSession("vsi", video, parameters, subtitle)}
               onRunQuery={(query, parameters) => runSessionQuery(query, parameters)}
               onPreparingNewSessionChange={setPreparingNewSession}
+              vlmReady={vlmReady}
             />
           )}
           <RunList
@@ -369,6 +383,8 @@ export default function App() {
                     vlmProfiles={vlmProfiles}
                     deleting={selected?.id === deletingJobId}
                     onDelete={deleteJob}
+                    autoVlmJobId={autoVlmJobId}
+                    onAutoVlmStarted={() => setAutoVlmJobId(null)}
                   />
                 )}
               </div>
