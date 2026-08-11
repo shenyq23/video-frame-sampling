@@ -12,6 +12,7 @@ import numpy as np
 
 from ..models import ClipModelStore
 from ..settings import AKS_ROOT, CLIP_MODELS_DIR, feature_profile_status, load_feature_profiles
+from ..torch_runtime import require_torch
 from ..video_reader import open_video
 from .base import AlgorithmAdapter, ProgressCallback
 
@@ -183,6 +184,7 @@ class AKSAdapter(AlgorithmAdapter):
         session_dir: Path,
         progress: ProgressCallback,
     ) -> Path:
+        require_torch()
         if str(AKS_ROOT) not in sys.path:
             sys.path.insert(0, str(AKS_ROOT))
         from PIL import Image
@@ -513,6 +515,7 @@ class AKSAdapter(AlgorithmAdapter):
         output_dir: Path,
         progress: ProgressCallback,
     ) -> Path:
+        require_torch()
         if str(AKS_ROOT) not in sys.path:
             sys.path.insert(0, str(AKS_ROOT))
         from PIL import Image

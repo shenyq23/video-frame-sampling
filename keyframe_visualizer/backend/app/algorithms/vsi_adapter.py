@@ -19,6 +19,7 @@ from ..settings import (
     VSI_MODEL_CACHE_DIR,
     VSI_ROOT,
 )
+from ..torch_runtime import require_torch
 from .base import AlgorithmAdapter, ProgressCallback
 
 
@@ -120,6 +121,10 @@ class VSIAdapter(AlgorithmAdapter):
     def _ensure_runtime() -> None:
         if not VSI_ROOT.is_dir():
             raise RuntimeError(f"VSI_VideoFraming directory is missing: {VSI_ROOT}")
+        # Torch must already be loaded before EasyOCR/Ultralytics pull it in from
+        # this worker thread; app/__init__.py does that at startup and this call
+        # only reports the failure with an actionable message.
+        require_torch()
         if str(VSI_ROOT) not in sys.path:
             sys.path.insert(0, str(VSI_ROOT))
         os.environ.setdefault("HF_HOME", str(VSI_MODEL_CACHE_DIR / "huggingface"))
