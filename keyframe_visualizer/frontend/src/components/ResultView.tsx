@@ -420,6 +420,8 @@ export function ResultView({
         </div>
       </div>
 
+      <RunTiming session={currentSession} job={job} />
+
       <div className="result-main">
         <div className="result-frames-pane">
           <div className="frame-set-toolbar">
@@ -587,7 +589,6 @@ export function ResultView({
         </div>
 
         <ParameterSummary algorithm={job.algorithm} parameters={job.parameters} clipModels={clipModels} />
-        <RunTiming session={currentSession} job={job} />
 
         <div className="result-video">
           <h3>原视频</h3>

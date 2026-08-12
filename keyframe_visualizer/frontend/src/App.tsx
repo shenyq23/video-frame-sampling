@@ -338,6 +338,19 @@ export default function App() {
             selectedSessionId={preparingNewSession ? null : currentSession?.algorithm === activeAlgorithm ? currentSession.id : null}
             onSelect={selectSession}
           />
+          {!preparingNewSession && !pendingSessionDelete && (
+            <QueryList
+              session={currentSession}
+              jobs={currentSessionJobs}
+              selectedJobId={selected?.id ?? null}
+              deletingJobId={deletingJobId}
+              deletingSessionId={deletingSessionId}
+              hasActiveJobs={currentSessionJobs.some((job) => job.status === "queued" || job.status === "running")}
+              onSelect={selectJob}
+              onDeleteJob={deleteJob}
+              onDeleteSession={deleteSession}
+            />
+          )}
         </aside>
         <div className="result-column">
           {preparingNewSession ? (
@@ -353,42 +366,25 @@ export default function App() {
               <p>{pendingSessionDelete.original_filename}</p>
               <p>正在删除视频预处理缓存和全部 query 历史…</p>
             </section>
+          ) : pendingDelete ? (
+            <section className="deleting-state" aria-live="polite">
+              <div className="empty-orbit" />
+              <h2>正在删除 query 记录</h2>
+              <p>{pendingDelete.query}</p>
+              <p>正在释放视频连接并删除这条 query 的结果…</p>
+            </section>
           ) : (
-            <div className="session-detail-layout">
-              <QueryList
-                session={currentSession}
-                jobs={currentSessionJobs}
-                selectedJobId={selected?.id ?? null}
-                deletingJobId={deletingJobId}
-                deletingSessionId={deletingSessionId}
-                hasActiveJobs={currentSessionJobs.some((job) => job.status === "queued" || job.status === "running")}
-                onSelect={selectJob}
-                onDeleteJob={deleteJob}
-                onDeleteSession={deleteSession}
-              />
-              <div className="job-result-pane">
-                {pendingDelete ? (
-                  <section className="deleting-state" aria-live="polite">
-                    <div className="empty-orbit" />
-                    <h2>正在删除 query 记录</h2>
-                    <p>{pendingDelete.query}</p>
-                    <p>正在释放视频连接并删除这条 query 的结果…</p>
-                  </section>
-                ) : (
-                  <ResultView
-                    job={selected}
-                    currentSession={currentSession}
-                    manifest={manifest}
-                    clipModels={clipModels}
-                    vlmProfiles={vlmProfiles}
-                    deleting={selected?.id === deletingJobId}
-                    onDelete={deleteJob}
-                    autoVlmJobId={autoVlmJobId}
-                    onAutoVlmStarted={() => setAutoVlmJobId(null)}
-                  />
-                )}
-              </div>
-            </div>
+            <ResultView
+              job={selected}
+              currentSession={currentSession}
+              manifest={manifest}
+              clipModels={clipModels}
+              vlmProfiles={vlmProfiles}
+              deleting={selected?.id === deletingJobId}
+              onDelete={deleteJob}
+              autoVlmJobId={autoVlmJobId}
+              onAutoVlmStarted={() => setAutoVlmJobId(null)}
+            />
           )}
         </div>
       </main>

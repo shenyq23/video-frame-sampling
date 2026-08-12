@@ -50,25 +50,28 @@ export function QueryList({
 
   if (!session) {
     return (
-      <aside className="query-panel">
-        <div className="query-panel-heading">
-          <p className="eyebrow">QUERY HISTORY</p>
-          <h2>选择一个视频</h2>
+      <section className="run-list query-history">
+        <div className="section-heading compact-heading">
+          <div>
+            <p className="eyebrow">QUERY HISTORY</p>
+            <h2>Query 历史</h2>
+          </div>
         </div>
-        <p className="empty-copy">左侧选择视频后，这里会显示该视频下的所有 query。</p>
-      </aside>
+        <p className="empty-copy">选择一个视频后，这里会显示该视频下的所有 query。</p>
+      </section>
     );
   }
 
   return (
-    <aside className="query-panel">
-      <div className="query-panel-heading">
+    <section className="run-list query-history">
+      <div className="section-heading compact-heading">
         <div>
           <p className="eyebrow">QUERY HISTORY</p>
-          <h2>{session.original_filename}</h2>
+          <h2>Query 历史</h2>
         </div>
         <span className="count-label">{jobs.length}</span>
       </div>
+      <p className="query-history-session" title={session.original_filename}>{session.original_filename}</p>
       <div className="query-panel-actions">
         <button
           className="destructive-button"
@@ -126,6 +129,6 @@ export function QueryList({
           ))}
         </div>
       )}
-    </aside>
+    </section>
   );
 }
