@@ -1,0 +1,47 @@
+{
+  "profiles": {
+    "pangu-default": {
+      "name": "Pangu",
+      "backend": "pangu",
+      "enabled": true,
+      "config": {
+        "base_url": "http://onlineservice-green.cn-east-4.roma.huawei.com:8088/v2/infer/41fdb109-ae3f-4fd9-a64b-8d1a3c4714b0",
+        "api_key_env": "PANGU_EMBED_API_KEY",
+        "text_endpoint": "/embed",
+        "image_endpoint": "/embed",
+        "text_instruction": "Retrieve relevant documents for the user's query.",
+        "image_instruction": "Retrieve relevant documents for the user's query.",
+        "image_format": "PNG",
+        "response_embedding_paths": ["embedding"],
+        "timeout_seconds": 30,
+        "max_retries": 2
+      }
+    },
+    "mep-default": {
+      "name": "86M",
+      "backend": "mep",
+      "enabled": true,
+      "config": {
+        "elb": "http://10.41.1.17:8080/service",
+        "appid_env": "MEP_EMBED_APPID",
+        "secret_key_env": "MEP_EMBED_SECRET_KEY",
+        "b_id": "cloud_gallery_embedding_service_gz",
+        "flow_id": "cloud_gallery_embedding_service_gz",
+        "model_version": "v2",
+        "text_task": "text_embedding",
+        "image_task": "image_embedding",
+        "text_field": "text",
+        "image_field": "image_url",
+        "image_encoding": "base64",
+        "text_response_embedding_paths": [
+          "text_embedding"
+        ],
+        "image_response_embedding_paths": [
+          "image_embedding"
+        ],
+        "timeout_seconds": 30,
+        "max_retries": 2
+      }
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "class_path": "your_package.your_backend:YourFeatureBackend",
+  "options": {
+    "model_path": "/path/to/local/model",
+    "device": "cuda"
+  }
+}

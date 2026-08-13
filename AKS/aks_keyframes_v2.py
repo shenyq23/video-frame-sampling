@@ -3,7 +3,7 @@
 The existing ``aks_keyframes.py`` is intentionally kept as the legacy chain.
 This V2 path adds traceable original/robust modes without loading an MLLM:
 
-    video -> candidate frames -> CLIP scores -> shared AKS -> JPG + manifest
+    video -> candidate frames -> pluggable relevance scores -> shared AKS -> JPG + manifest
 """
 
 from __future__ import annotations
@@ -54,49 +54,92 @@ def sample_candidate_indices(
     raise ValueError("sampling_mode must be 'original' or 'interval'")
 
 
-def score_with_clip(
+def sample_uniform_indices(frame_indices: Sequence[int], count: int) -> list[int]:
+    """Select ``count`` temporally uniform frames from an ordered candidate pool."""
+
+    if count <= 0 or len(frame_indices) == 0:
+        return []
+    if count >= len(frame_indices):
+        return [int(index) for index in frame_indices]
+    if count == 1:
+        return [int(frame_indices[len(frame_indices) // 2])]
+
+    last_position = len(frame_indices) - 1
+    positions = [round(order * last_position / (count - 1)) for order in range(count)]
+    return [int(frame_indices[position]) for position in positions]
+
+
+def save_frame_set(
+    video_reader,
+    frame_indices: Sequence[int],
+    fps: float,
+    output_dir: Path,
+    relative_dir: str,
+    jpeg_quality: int,
+    batch_size: int,
+    score_by_index: dict[int, float],
+) -> list[dict[str, object]]:
+    """Save a frame set in bounded batches and return manifest records."""
+
+    from PIL import Image
+
+    frames_dir = output_dir / relative_dir
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    records: list[dict[str, object]] = []
+    for start in range(0, len(frame_indices), batch_size):
+        batch_indices = frame_indices[start : start + batch_size]
+        arrays = video_reader.get_batch(list(batch_indices)).asnumpy()
+        for offset, (frame_index, array) in enumerate(zip(batch_indices, arrays), start + 1):
+            timestamp = frame_index / fps
+            filename = f"{offset:03d}_t{timestamp:010.3f}_f{frame_index}.jpg"
+            Image.fromarray(array).save(frames_dir / filename, quality=jpeg_quality)
+            record: dict[str, object] = {
+                "order": offset,
+                "file": f"{relative_dir}/{filename}",
+                "frame_index": frame_index,
+                "timestamp_seconds": round(timestamp, 6),
+            }
+            if frame_index in score_by_index:
+                record["relevance_score"] = score_by_index[frame_index]
+            records.append(record)
+    return records
+
+
+def score_candidate_frames(
     video_reader,
     frame_indices: Sequence[int],
     query: str,
+    feature_backend: str,
+    feature_config: str | None,
     model_name: str,
     device: str,
     batch_size: int,
-) -> list[float]:
-    """Compute cosine similarity exactly as the repository's CLIP branch."""
+) -> tuple[list[float], dict[str, object]]:
+    """Score candidates with a configured local or remote feature backend."""
 
-    import torch
     from PIL import Image
-    from transformers import CLIPModel, CLIPProcessor
+    from feature_backends import create_relevance_scorer, load_feature_config
 
-    print(f"Loading relevance model: {model_name} ({device})")
-    model = CLIPModel.from_pretrained(model_name).to(device).eval()
-    processor = CLIPProcessor.from_pretrained(model_name)
-
-    text_inputs = processor(text=query, return_tensors="pt", padding=True, truncation=True)
-    text_inputs = {name: value.to(device) for name, value in text_inputs.items()}
-    with torch.inference_mode():
-        text_features = model.get_text_features(**text_inputs)
+    config = load_feature_config(feature_config)
+    scorer = create_relevance_scorer(
+        feature_backend,
+        config,
+        model_name=model_name,
+        device=device,
+        batch_size=batch_size,
+    )
+    scorer.prepare_query(query)
 
     scores: list[float] = []
     total_batches = math.ceil(len(frame_indices) / batch_size)
     for batch_number, start in enumerate(range(0, len(frame_indices), batch_size), 1):
         batch_indices = frame_indices[start : start + batch_size]
         arrays = video_reader.get_batch(list(batch_indices)).asnumpy()
-        image_inputs = processor(
-            images=[Image.fromarray(array) for array in arrays],
-            return_tensors="pt",
-            padding=True,
-        )
-        image_inputs = {name: value.to(device) for name, value in image_inputs.items()}
-        with torch.inference_mode():
-            image_features = model.get_image_features(**image_inputs)
-            batch_scores = torch.nn.functional.cosine_similarity(
-                text_features.expand_as(image_features), image_features, dim=-1
-            )
-        scores.extend(batch_scores.detach().cpu().float().tolist())
+        images = [Image.fromarray(array) for array in arrays]
+        scores.extend(scorer.score_images(images))
         print(f"Scoring candidate frames: {batch_number}/{total_batches}", end="\r")
     print()
-    return scores
+    return scores, scorer.metadata
 
 
 def safe_stem(value: str) -> str:
@@ -133,11 +176,13 @@ def run(args: argparse.Namespace) -> Path:
     if not candidate_indices:
         raise SystemExit("The video contains no candidate frames")
 
-    device = choose_device(args.device)
-    scores = score_with_clip(
+    device = choose_device(args.device) if args.feature_backend == "clip" else "remote"
+    scores, feature_metadata = score_candidate_frames(
         reader,
         candidate_indices,
         query,
+        args.feature_backend,
+        args.feature_config,
         args.model_name,
         device,
         args.batch_size,
@@ -157,29 +202,44 @@ def run(args: argparse.Namespace) -> Path:
         if args.output_dir
         else Path("aks_output_v2").resolve() / safe_stem(video_path.stem)
     )
-    frames_dir = output_dir / "frames"
-    frames_dir.mkdir(parents=True, exist_ok=True)
-
-    from PIL import Image
-
     score_by_index = dict(zip(candidate_indices, scores))
     selected_indices = selection.frame_indices
-    selected_arrays = (
-        reader.get_batch(selected_indices).asnumpy() if selected_indices else []
+    records = save_frame_set(
+        reader,
+        selected_indices,
+        fps,
+        output_dir,
+        "frames",
+        args.jpeg_quality,
+        args.batch_size,
+        score_by_index,
     )
-    records = []
-    for order, (frame_index, array) in enumerate(zip(selected_indices, selected_arrays), 1):
-        timestamp = frame_index / fps
-        filename = f"{order:03d}_t{timestamp:010.3f}_f{frame_index}.jpg"
-        Image.fromarray(array).save(frames_dir / filename, quality=args.jpeg_quality)
-        records.append(
-            {
-                "order": order,
-                "file": f"frames/{filename}",
-                "frame_index": frame_index,
-                "timestamp_seconds": round(timestamp, 6),
-                "relevance_score": score_by_index[frame_index],
-            }
+
+    uniform_records: list[dict[str, object]] = []
+    if args.save_uniform_baseline:
+        uniform_indices = sample_uniform_indices(candidate_indices, len(selected_indices))
+        uniform_records = save_frame_set(
+            reader,
+            uniform_indices,
+            fps,
+            output_dir,
+            "uniform_frames",
+            args.jpeg_quality,
+            args.batch_size,
+            score_by_index,
+        )
+
+    candidate_records: list[dict[str, object]] = []
+    if args.save_candidate_frames:
+        candidate_records = save_frame_set(
+            reader,
+            candidate_indices,
+            fps,
+            output_dir,
+            "candidate_frames",
+            args.jpeg_quality,
+            args.batch_size,
+            score_by_index,
         )
 
     manifest = {
@@ -192,8 +252,9 @@ def run(args: argparse.Namespace) -> Path:
         },
         "video": str(video_path),
         "query": query,
-        "relevance_model": args.model_name,
-        "device": device,
+        "relevance_model": args.model_name if args.feature_backend == "clip" else None,
+        "feature_extraction": feature_metadata,
+        "device": device if args.feature_backend == "clip" else None,
         "video_fps": fps,
         "video_total_frames": len(reader),
         "candidate_sampling": {
@@ -212,6 +273,17 @@ def run(args: argparse.Namespace) -> Path:
             "segments": [asdict(segment) for segment in selection.segments],
         },
         "keyframes": records,
+        "uniform_baseline": {
+            "saved": args.save_uniform_baseline,
+            "selection_rule": "uniformly spaced over the AKS candidate pool",
+            "frame_count": len(uniform_records),
+            "frames": uniform_records,
+        },
+        "candidate_frames": {
+            "saved": args.save_candidate_frames,
+            "frame_count": len(candidate_records),
+            "frames": candidate_records,
+        },
     }
     output_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = output_dir / "manifest.json"
@@ -224,7 +296,17 @@ def run(args: argparse.Namespace) -> Path:
             f"Note: {args.aks_mode} mode selected {len(records)} frames from a "
             f"budget of {args.max_num_frames}. Use --aks-mode robust to fill the budget."
         )
-    print(f"Selected {len(records)} keyframes -> {frames_dir}")
+    print(f"Selected {len(records)} keyframes -> {output_dir / 'frames'}")
+    if uniform_records:
+        print(
+            f"Saved {len(uniform_records)} same-budget uniform frames -> "
+            f"{output_dir / 'uniform_frames'}"
+        )
+    if candidate_records:
+        print(
+            f"Saved all {len(candidate_records)} candidate frames -> "
+            f"{output_dir / 'candidate_frames'}"
+        )
     print(f"Traceable manifest -> {manifest_path}")
     return output_dir
 
@@ -252,7 +334,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="original uses int(FPS); interval uses --sample-interval seconds",
     )
     parser.add_argument("--sample-interval", type=float, default=1.0)
-    parser.add_argument("--model-name", default="openai/clip-vit-base-patch32")
+    parser.add_argument(
+        "--feature-backend",
+        choices=("clip", "pangu", "mep", "http", "python"),
+        default="clip",
+        help="feature scorer backend; python loads a custom plugin from JSON config",
+    )
+    parser.add_argument(
+        "--feature-config",
+        help="JSON config for pangu, mep, or generic http backends",
+    )
+    parser.add_argument("--model-name", default="./models/clip-vit-base-patch32")
     parser.add_argument("--device", default="auto", help="auto, cuda, mps, or cpu")
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--decode-threads", type=int, default=2)
@@ -260,6 +352,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--std-threshold", type=float, default=-100.0, help="AKS t2")
     parser.add_argument("--max-depth", type=int, default=5)
     parser.add_argument("--jpeg-quality", type=int, default=95)
+    parser.add_argument(
+        "--save-uniform-baseline",
+        action="store_true",
+        help="save a query-independent, same-count uniform baseline",
+    )
+    parser.add_argument(
+        "--save-candidate-frames",
+        action="store_true",
+        help="save every uniformly sampled frame in the AKS candidate pool",
+    )
     return parser
 
 

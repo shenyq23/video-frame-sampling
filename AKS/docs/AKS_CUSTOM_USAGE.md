@@ -23,6 +23,66 @@ pip install -r requirements-keyframes.txt
 Transformers 会从 Hugging Face 下载权重；也可以通过 `--model-name` 指向
 本地兼容的 CLIP checkpoint。
 
+### 2.1 特征提取后端
+
+默认仍使用原 CLIP。本地离线模型路径的用法与之前相同：
+
+```bash
+python aks_keyframes_v2.py \
+  --video /path/to/video.mp4 \
+  --query "the event to retrieve" \
+  --feature-backend clip \
+  --model-name /path/to/local/clip-model
+```
+
+Pangu 后端按 `pangu_sim.py` 的协议调用 Bearer 鉴权 `/embed` 接口：
+`instruction/text` 通过普通表单字段发送，图片通过 multipart 文件字段发送。
+复制并修改 `configs/features/pangu.example.json`，密钥只放环境变量：
+
+```bash
+export PANGU_EMBED_API_KEY='your-key'
+python aks_keyframes_v2.py \
+  --video /path/to/video.mp4 \
+  --query "the event to retrieve" \
+  --feature-backend pangu \
+  --feature-config configs/features/pangu.json
+```
+
+模板默认让文本和图片都使用 `pangu_sim.py` 的 `QUERY_INSTR`，并把视频帧编码为
+PNG。`pangu_sim.py` 本身单独运行时还需设置：
+
+```bash
+export PANGU_EMBED_BASE_URL='your-base-url'
+```
+
+MEP 必须同时提供同一个多模态模型的文本和图片 embedding task。复制
+`configs/features/mep.example.json`，按部署服务修改 task、字段和响应路径：
+
+```bash
+export MEP_EMBED_APPID='your-app-id'
+export MEP_EMBED_SECRET_KEY='your-secret'
+python aks_keyframes_v2.py \
+  --video /path/to/video.mp4 \
+  --query "the event to retrieve" \
+  --feature-backend mep \
+  --feature-config configs/features/mep.json
+```
+
+文本和图片可以分别配置响应字段。当前模板依次兼容文本响应中的
+`text_embedding/es_embedding/embedding`，以及图片响应中的
+`image_embedding/es_embedding/embedding`。如果错误信息列出了其他实际字段，
+将对应字段加入 `text_response_embedding_paths` 或
+`image_response_embedding_paths`。
+
+其他 multipart embedding API 可从 `configs/features/http.example.json`
+开始配置，并选择 `--feature-backend http`。无论后端类型，文本与图片向量必须
+维度相同且位于同一语义空间。
+
+不符合上述 HTTP 协议的本地模型或特殊 API，可从
+`configs/features/python.example.json` 开始，指定自定义 Python 类。该类实现
+`embed_texts/embed_images`，或直接实现 `prepare_query/score_images` 即可，AKS
+主流程无需增加新的模型分支。
+
 ## 3. 推荐：自定义视频的 robust 模式
 
 ```bash
@@ -184,9 +244,11 @@ python frame_select.py \
 | `--threshold` | 0.8 | AKS 的峰值停止阈值 `t1` |
 | `--std-threshold` | -100 | AKS 的标准差阈值 `t2` |
 | `--max-depth` | 5 | 最大二分深度 |
-| `--batch-size` | 16 | CLIP 图像打分批大小 |
-| `--device` | auto | 自动选择 CUDA、MPS 或 CPU |
-| `--model-name` | CLIP ViT-B/32 | CLIP 模型名或本地路径 |
+| `--feature-backend` | clip | `clip`、`pangu`、`mep`、`http` 或 `python` |
+| `--feature-config` | 无 | 远端特征后端的 JSON 配置 |
+| `--batch-size` | 16 | 候选图片打分批大小 |
+| `--device` | auto | CLIP 后端自动选择 CUDA、MPS 或 CPU |
+| `--model-name` | CLIP ViT-B/32 | CLIP 后端的模型名或本地路径 |
 
 完整参数可查看：
 
@@ -217,3 +279,4 @@ python -m unittest discover -s tests -v
 - 非整除预算下 `original` 与 `robust` 的差异；
 - 常量分数、短视频和非法输入；
 - 原始 FPS 采样与真实秒间隔采样的差异。
+- 通用余弦评分、向量维度检查、multipart HTTP 与 MEP 请求协议。

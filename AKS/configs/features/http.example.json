@@ -1,0 +1,16 @@
+{
+  "base_url": "http://your-embedding-api",
+  "api_key_env": "EMBED_API_KEY",
+  "auth_header": "Authorization",
+  "auth_scheme": "Bearer",
+  "text_endpoint": "/embed/text",
+  "image_endpoint": "/embed/image",
+  "text_field": "text",
+  "image_field": "image",
+  "instruction_field": "instruction",
+  "text_instruction": "Retrieve relevant images for the user's query.",
+  "image_instruction": "Represent this image for text-to-image retrieval.",
+  "response_embedding_paths": ["data.embedding", "embedding"],
+  "timeout_seconds": 30,
+  "max_retries": 2
+}

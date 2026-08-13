@@ -6,7 +6,7 @@ import unittest
 import numpy as np
 
 from aks_core import normalize_scores, select_frames
-from aks_keyframes_v2 import sample_candidate_indices
+from aks_keyframes_v2 import sample_candidate_indices, sample_uniform_indices
 
 
 def legacy_reference(scores, frame_indices, n=64, t1=0.8, t2=-100.0, max_depth=5):
@@ -99,6 +99,12 @@ class AKSCoreTests(unittest.TestCase):
         self.assertEqual(
             [0, 30, 60, 90], sample_candidate_indices(100, 29.97, "interval", 1.0)
         )
+
+    def test_uniform_baseline_matches_aks_output_count(self):
+        candidates = [0, 30, 60, 90, 120, 150, 180]
+        self.assertEqual([0, 90, 180], sample_uniform_indices(candidates, 3))
+        self.assertEqual([90], sample_uniform_indices(candidates, 1))
+        self.assertEqual(candidates, sample_uniform_indices(candidates, 99))
 
 
 if __name__ == "__main__":

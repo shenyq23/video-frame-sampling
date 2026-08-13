@@ -1,0 +1,12 @@
+{
+  "base_url": "http://onlineservice-green.cn-east-4.roma.huawei.com:8088/v2/infer/41fdb109-ae3f-4fd9-a64b-8d1a3c4714b0",
+  "api_key_env": "PANGU_EMBED_API_KEY",
+  "text_endpoint": "/embed",
+  "image_endpoint": "/embed",
+  "text_instruction": "Retrieve relevant documents for the user's query.",
+  "image_instruction": "Retrieve relevant documents for the user's query.",
+  "image_format": "PNG",
+  "response_embedding_paths": ["embedding"],
+  "timeout_seconds": 30,
+  "max_retries": 2
+}

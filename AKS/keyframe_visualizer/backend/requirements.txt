@@ -1,0 +1,17 @@
+fastapi>=0.115,<1
+uvicorn[standard]>=0.34,<1
+pydantic>=2.10,<3
+python-multipart>=0.0.20
+python-dotenv>=1.0
+numpy>=1.23
+Pillow>=10
+requests>=2.31
+decord>=0.6.0
+opencv-python-headless>=4.8
+torch
+transformers
+scipy>=1.10
+ultralytics>=8.3
+clip @ git+https://github.com/ultralytics/CLIP.git@0fa238b2ba553fe76dc158348d8e34625e3e2470
+sentence-transformers>=3.0
+easyocr>=1.7
