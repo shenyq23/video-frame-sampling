@@ -92,10 +92,20 @@ class VSIParameters(BaseModel):
         return self
 
 
+class SAGEParameters(BaseModel):
+    asr_mode: Literal["remote", "upload", "none"] = "remote"
+    budget: int = Field(default=8, ge=1, le=512)
+    device: Literal["cuda", "mps", "cpu"] = "cpu"
+    save_uniform_baseline: bool = True
+    save_candidate_frames: bool = True
+
+
 class CreateJobConfig(BaseModel):
-    algorithm: Literal["aks", "vsi"] = "aks"
+    algorithm: Literal["aks", "vsi", "sage"] = "aks"
     query: str = Field(min_length=1, max_length=8000)
-    parameters: Union[AKSParameters, VSIParameters] = Field(default_factory=AKSParameters)
+    parameters: Union[AKSParameters, VSIParameters, SAGEParameters] = Field(
+        default_factory=AKSParameters
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -104,11 +114,9 @@ class CreateJobConfig(BaseModel):
             return value
         data = dict(value)
         raw = data.get("parameters", {})
-        data["parameters"] = (
-            VSIParameters.model_validate(raw)
-            if data.get("algorithm", "aks") == "vsi"
-            else AKSParameters.model_validate(raw)
-        )
+        algorithm = data.get("algorithm", "aks")
+        models = {"aks": AKSParameters, "vsi": VSIParameters, "sage": SAGEParameters}
+        data["parameters"] = models.get(algorithm, AKSParameters).model_validate(raw)
         return data
 
     @field_validator("query")
@@ -127,8 +135,10 @@ class CreateJobConfig(BaseModel):
 
 
 class CreateSessionConfig(BaseModel):
-    algorithm: Literal["aks", "vsi"] = "aks"
-    parameters: Union[AKSParameters, VSIParameters] = Field(default_factory=AKSParameters)
+    algorithm: Literal["aks", "vsi", "sage"] = "aks"
+    parameters: Union[AKSParameters, VSIParameters, SAGEParameters] = Field(
+        default_factory=AKSParameters
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -137,11 +147,9 @@ class CreateSessionConfig(BaseModel):
             return value
         data = dict(value)
         raw = data.get("parameters", {})
-        data["parameters"] = (
-            VSIParameters.model_validate(raw)
-            if data.get("algorithm", "aks") == "vsi"
-            else AKSParameters.model_validate(raw)
-        )
+        algorithm = data.get("algorithm", "aks")
+        models = {"aks": AKSParameters, "vsi": VSIParameters, "sage": SAGEParameters}
+        data["parameters"] = models.get(algorithm, AKSParameters).model_validate(raw)
         return data
 
 

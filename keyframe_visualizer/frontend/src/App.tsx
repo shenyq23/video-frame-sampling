@@ -3,6 +3,7 @@ import { api } from "./api";
 import { QueryList } from "./components/QueryList";
 import { ResultView } from "./components/ResultView";
 import { RunForm } from "./components/RunForm";
+import { SageForm } from "./components/SageForm";
 import { VsiForm } from "./components/VsiForm";
 import { RunList } from "./components/RunList";
 import type {
@@ -14,6 +15,7 @@ import type {
   AlgorithmId,
   VsiQueryParameters,
   VsiSessionParameters,
+  SageQueryParameters,
   Session,
   VlmProfile,
   ParameterSnapshot,
@@ -254,7 +256,7 @@ export default function App() {
   };
 
   const selectJob = (job: Job) => {
-    if (job.algorithm === "aks" || job.algorithm === "vsi") setActiveAlgorithm(job.algorithm);
+    if (job.algorithm === "aks" || job.algorithm === "vsi" || job.algorithm === "sage") setActiveAlgorithm(job.algorithm);
     setPreparingNewSession(false);
     setSelected(job);
     setAutoVlmJobId((current) => (current === job.id ? current : null));
@@ -301,7 +303,7 @@ export default function App() {
         <aside className="control-column">
           <div className="algorithm-switcher" role="tablist" aria-label="抽帧算法">
             <span className="algorithm-switcher-label">抽帧算法</span>
-            {(["aks", "vsi"] as AlgorithmId[]).map((algorithm) => (
+            {(["aks", "vsi", "sage"] as AlgorithmId[]).map((algorithm) => (
               <button key={algorithm} className={activeAlgorithm === algorithm ? "selected" : ""} type="button" role="tab" aria-selected={activeAlgorithm === algorithm} onClick={() => switchAlgorithm(algorithm)}>
                 {algorithm.toUpperCase()}
               </button>
@@ -320,7 +322,7 @@ export default function App() {
               onPreparingNewSessionChange={setPreparingNewSession}
               vlmReady={vlmReady}
             />
-          ) : (
+          ) : activeAlgorithm === "vsi" ? (
             <VsiForm
               algorithm={algorithms.find((item) => item.id === "vsi")}
               currentSession={currentSession?.algorithm === "vsi" ? currentSession : null}
@@ -328,6 +330,17 @@ export default function App() {
               busy={submitting}
               onPrepareSession={(video, parameters, subtitle) => prepareSession("vsi", video, parameters, subtitle)}
               onRunQuery={(query, parameters) => runSessionQuery(query, parameters)}
+              onPreparingNewSessionChange={setPreparingNewSession}
+              vlmReady={vlmReady}
+            />
+          ) : (
+            <SageForm
+              algorithm={algorithms.find((item) => item.id === "sage")}
+              currentSession={currentSession?.algorithm === "sage" ? currentSession : null}
+              preparingNewSession={preparingNewSession}
+              busy={submitting}
+              onPrepareSession={(video, parameters, asr) => prepareSession("sage", video, parameters, asr)}
+              onRunQuery={(query, parameters: SageQueryParameters) => runSessionQuery(query, parameters)}
               onPreparingNewSessionChange={setPreparingNewSession}
               vlmReady={vlmReady}
             />

@@ -125,7 +125,14 @@ function ParameterSummary({
     ["保存均匀抽帧", parameters.save_uniform_baseline],
     ["保存访问帧", parameters.save_candidate_frames],
   ];
-  const items = algorithm === "vsi" ? vsiItems : aksItems;
+  const sageItems = [
+    ["ASR 来源", parameters.asr_mode],
+    ["关键帧预算", parameters.budget],
+    ["运行设备", parameters.device],
+    ["保存均匀抽帧", parameters.save_uniform_baseline],
+    ["保存候选帧", parameters.save_candidate_frames],
+  ];
+  const items = algorithm === "vsi" ? vsiItems : algorithm === "sage" ? sageItems : aksItems;
 
   return (
     <section className="parameter-panel" aria-labelledby="parameter-title">
@@ -191,6 +198,7 @@ function normalizeSelectedFrames(manifest: Manifest): FrameRecord[] {
     order: frame.selected_order ?? frame.order ?? 0,
     selected_by_aks: manifest.algorithm.id === "aks" ? true : frame.selected_by_aks,
     selected_by_vsi: manifest.algorithm.id === "vsi" ? true : frame.selected_by_vsi,
+    selected_by_sage: manifest.algorithm.id === "sage" ? true : frame.selected_by_sage,
   }));
 }
 
@@ -271,6 +279,7 @@ export function ResultView({
           file: frame.file,
           order: frame.order,
           selected_by_aks: frame.selected_by_aks ?? frame.selected,
+          selected_by_sage: frame.selected_by_sage ?? frame.selected,
         }));
     return {
       selected: { available: true, frames: selected },
@@ -365,7 +374,7 @@ export function ResultView({
             <p className="eyebrow">VIDEO SESSION</p>
             <h2>{currentSession.stage}</h2>
             <p className="state-query">“{currentSession.original_filename}”</p>
-            <p>{currentSession.algorithm === "vsi" ? "视频信息和字幕正在预处理，完成后就可以开始连续提问。" : "候选帧和特征正在缓存，完成后就可以开始连续提问。"}</p>
+            <p>{currentSession.algorithm === "vsi" ? "视频信息和字幕正在预处理，完成后就可以开始连续提问。" : currentSession.algorithm === "sage" ? "视频和 ASR 正在准备，完成后就可以开始连续提问。" : "候选帧和特征正在缓存，完成后就可以开始连续提问。"}</p>
             <p className="standalone-timing">预处理已用时：<strong>{formatDuration(recordDuration(currentSession))}</strong></p>
             <div className="large-progress"><i style={{ width: `${currentSession.progress * 100}%` }} /></div>
           </div>
@@ -402,7 +411,7 @@ export function ResultView({
   const tabs: Array<{ key: FrameSetKey; label: string }> = [
     { key: "selected", label: `${job.algorithm.toUpperCase()} 抽出帧` },
     { key: "uniform", label: "同数量均匀抽帧" },
-    { key: "candidates", label: job.algorithm === "vsi" ? "VSI 访问帧" : "所有候选帧" },
+    { key: "candidates", label: job.algorithm === "vsi" ? "VSI 访问帧" : job.algorithm === "sage" ? "SAGE 候选帧" : "所有候选帧" },
   ];
 
   return (
@@ -460,6 +469,8 @@ export function ResultView({
                     <div><dt>{job.algorithm === "vsi" ? "融合分数" : "相关性"}</dt><dd>{typeof frame.relevance_score === "number" ? frame.relevance_score.toFixed(4) : "—"}</dd></div>
                     {job.algorithm === "vsi" ? (
                       <><div><dt>采样概率</dt><dd>{typeof frame.sampling_probability === "number" ? frame.sampling_probability.toFixed(6) : "—"}</dd></div><div><dt>访问顺序</dt><dd>{frame.visited_order ?? "—"}</dd></div></>
+                    ) : job.algorithm === "sage" ? (
+                      <><div><dt>SAGE 分数</dt><dd>{typeof frame.sage_score === "number" ? frame.sage_score.toFixed(4) : typeof frame.base_score === "number" ? frame.base_score.toFixed(4) : "—"}</dd></div><div><dt>变化分数</dt><dd>{typeof frame.change_score === "number" ? frame.change_score.toFixed(4) : "—"}</dd></div><div><dt>Segment</dt><dd>{typeof frame.segment_id === "number" ? `#${frame.segment_id}` : "—"}</dd></div>{frameSet !== "selected" && <div><dt>被 SAGE 选中</dt><dd>{frame.selected_by_sage ? "是" : "否"}</dd></div>}</>
                     ) : frameSet === "selected" ? (
                       <>
                         {/* Temporarily hidden from the AKS selected-frame cards.
@@ -584,7 +595,7 @@ export function ResultView({
 
         <div className="summary-grid">
           <div><span>已选帧</span><strong>{manifest.summary.selected_keyframes}</strong><small>/ 请求 {manifest.summary.requested_keyframes}</small></div>
-          <div><span>{job.algorithm === "vsi" ? "访问帧" : "候选帧"}</span><strong>{manifest.summary.candidate_frames}</strong><small>{job.algorithm === "vsi" ? "YOLO-World 实际检测" : manifest.candidate_sampling?.interval_seconds ? `请求 ${manifest.candidate_sampling.interval_seconds}s · 实际 ${manifest.candidate_sampling.effective_interval_seconds?.toFixed(6) ?? "—"}s` : "原始采样"}</small></div>
+          <div><span>{job.algorithm === "vsi" ? "访问帧" : "候选帧"}</span><strong>{manifest.summary.candidate_frames}</strong><small>{job.algorithm === "vsi" ? "YOLO-World 实际检测" : job.algorithm === "sage" ? "按 Query 动态生成" : manifest.candidate_sampling?.interval_seconds ? `请求 ${manifest.candidate_sampling.interval_seconds}s · 实际 ${manifest.candidate_sampling.effective_interval_seconds?.toFixed(6) ?? "—"}s` : "原始采样"}</small></div>
           <div><span>视频时长</span><strong>{formatTime(manifest.video.duration_seconds)}</strong><small>{manifest.video.fps.toFixed(2)} FPS</small></div>
         </div>
 

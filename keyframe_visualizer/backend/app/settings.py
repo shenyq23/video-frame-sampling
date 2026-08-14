@@ -12,6 +12,14 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 PROJECT_DIR = BACKEND_DIR.parent
 AKS_ROOT = PROJECT_DIR.parent
 VSI_ROOT = AKS_ROOT / "VSI_VideoFraming"
+SAGE_ROOT = AKS_ROOT / "SAGE"
+SAGE_CLIP_MODEL = SAGE_ROOT / "models" / "clip" / "ViT-B-32.pt"
+SAGE_TEXT_MODEL = (
+    SAGE_ROOT
+    / "models"
+    / "sentence_transformer"
+    / "paraphrase-multilingual-mpnet-base-v2"
+)
 VSI_BUNDLED_OUTPUT_DIR = VSI_ROOT / "output"
 VSI_BUNDLED_EASYOCR_DIR = VSI_BUNDLED_OUTPUT_DIR / "easyocr_models"
 VSI_BUNDLED_YOLO_MODEL = VSI_ROOT / "yolov8s-worldv2.pt"
@@ -44,6 +52,22 @@ def ensure_data_directories() -> None:
     TRASH_DIR.mkdir(parents=True, exist_ok=True)
     CLIP_MODELS_DIR.mkdir(parents=True, exist_ok=True)
     VSI_MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def sage_asr_settings() -> dict[str, Any]:
+    return {
+        "base_url": os.getenv("SAGE_ASR_BASE_URL", "").strip().rstrip("/"),
+        "token": os.getenv("SAGE_ASR_TOKEN", "").strip(),
+        "connect_timeout": float(os.getenv("SAGE_ASR_CONNECT_TIMEOUT", "15")),
+        "upload_timeout": float(os.getenv("SAGE_ASR_UPLOAD_TIMEOUT", "600")),
+        "download_timeout": float(os.getenv("SAGE_ASR_DOWNLOAD_TIMEOUT", "120")),
+        "job_timeout": float(os.getenv("SAGE_ASR_JOB_TIMEOUT", "2400")),
+        "poll_interval": float(os.getenv("SAGE_ASR_POLL_INTERVAL", "5")),
+        "delete_remote": os.getenv(
+            "SAGE_ASR_DELETE_REMOTE_AFTER_DOWNLOAD", "true"
+        ).strip().lower()
+        in {"1", "true", "yes", "on"},
+    }
 
 
 def load_feature_profiles() -> dict[str, dict[str, Any]]:

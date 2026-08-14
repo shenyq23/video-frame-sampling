@@ -77,6 +77,7 @@ app.add_middleware(
 
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v"}
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024 * 1024
+MAX_AUXILIARY_UPLOAD_BYTES = 256 * 1024 * 1024
 MAX_MODEL_UPLOAD_BYTES = 12 * 1024 * 1024 * 1024
 DELETE_RETRY_DELAYS_SECONDS = (0.15, 0.3, 0.6, 1.0, 1.5)
 AKS_PREPROCESS_PARAMETER_KEYS = {
@@ -96,6 +97,7 @@ VSI_PREPROCESS_PARAMETER_KEYS = {
     "text_model",
     "device",
 }
+SAGE_PREPROCESS_PARAMETER_KEYS = {"asr_mode", "device"}
 
 
 def _row_or_404(job_id: str) -> dict:
@@ -313,7 +315,12 @@ def _validate_session_job_parameters(session: dict, algorithm: str, parameters: 
             session_parameters = {}
     except (TypeError, json.JSONDecodeError):
         session_parameters = {}
-    keys = AKS_PREPROCESS_PARAMETER_KEYS if algorithm == "aks" else VSI_PREPROCESS_PARAMETER_KEYS
+    keys_by_algorithm = {
+        "aks": AKS_PREPROCESS_PARAMETER_KEYS,
+        "vsi": VSI_PREPROCESS_PARAMETER_KEYS,
+        "sage": SAGE_PREPROCESS_PARAMETER_KEYS,
+    }
+    keys = keys_by_algorithm.get(algorithm, set())
     mismatched = [
         key
         for key in sorted(keys)
@@ -408,17 +415,26 @@ async def create_session(
     suffix = Path(video.filename or "video").suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=415, detail=f"Unsupported video type: {suffix or 'unknown'}")
-    if subtitle is not None:
-        subtitle_suffix = Path(subtitle.filename or "").suffix.lower()
-        if subtitle_suffix not in {".srt", ".json"}:
-            raise HTTPException(status_code=415, detail="字幕文件只支持 .srt 或 .json")
+    auxiliary_suffix = Path(subtitle.filename or "").suffix.lower() if subtitle else ""
     parameters = parsed_config.parameters.model_dump()
     if parsed_config.algorithm == "vsi":
+        if subtitle is not None and auxiliary_suffix not in {".srt", ".json"}:
+            raise HTTPException(status_code=415, detail="VSI 字幕文件只支持 .srt 或 .json")
         subtitle_mode = parameters.get("subtitle_mode")
         if subtitle_mode == "upload" and subtitle is None:
             raise HTTPException(status_code=422, detail="VSI 上传字幕模式需要提供 .srt 或 .json 文件")
+        if subtitle_mode != "upload" and subtitle is not None:
+            raise HTTPException(status_code=422, detail="当前 VSI 字幕模式不接受上传文件")
+    elif parsed_config.algorithm == "sage":
+        asr_mode = parameters.get("asr_mode")
+        if subtitle is not None and auxiliary_suffix != ".json":
+            raise HTTPException(status_code=415, detail="SAGE ASR 文件只支持 .json")
+        if asr_mode == "upload" and subtitle is None:
+            raise HTTPException(status_code=422, detail="SAGE 上传 ASR 模式需要提供 JSON 文件")
+        if asr_mode != "upload" and subtitle is not None:
+            raise HTTPException(status_code=422, detail="当前 SAGE ASR 模式不接受上传文件")
     elif subtitle is not None:
-        raise HTTPException(status_code=422, detail="只有 VSI 视频会话支持上传字幕文件")
+        raise HTTPException(status_code=422, detail="当前算法不支持附加文件")
 
     session_id = uuid.uuid4().hex
     session_dir = SESSIONS_DIR / session_id
@@ -439,13 +455,25 @@ async def create_session(
         if size == 0:
             raise HTTPException(status_code=400, detail="Uploaded video is empty")
         if subtitle is not None:
-            subtitle_name = re.sub(
-                r"[^A-Za-z0-9._-]+", "_", Path(subtitle.filename or "subtitles.json").name
+            subtitle_name = (
+                "asr.json"
+                if parsed_config.algorithm == "sage"
+                else re.sub(
+                    r"[^A-Za-z0-9._-]+",
+                    "_",
+                    Path(subtitle.filename or "subtitles.json").name,
+                )
             )
             subtitle_path = source_dir / subtitle_name
+            subtitle_size = 0
             with subtitle_path.open("wb") as destination:
                 while chunk := await subtitle.read(1024 * 1024):
+                    subtitle_size += len(chunk)
+                    if subtitle_size > MAX_AUXILIARY_UPLOAD_BYTES:
+                        raise HTTPException(status_code=413, detail="附加文件超过 256 MB 限制")
                     destination.write(chunk)
+            if subtitle_size == 0:
+                raise HTTPException(status_code=400, detail="上传的附加文件为空")
     except Exception:
         if session_dir.exists():
             shutil.rmtree(session_dir, ignore_errors=True)
@@ -608,6 +636,12 @@ async def create_job(
         parsed_config = CreateJobConfig.model_validate_json(config)
     except ValidationError as error:
         raise HTTPException(status_code=422, detail=json.loads(error.json())) from error
+
+    if parsed_config.algorithm == "sage":
+        raise HTTPException(
+            status_code=422,
+            detail="SAGE 需要先创建视频会话并准备 ASR，再从会话提交 query",
+        )
 
     suffix = Path(video.filename or "video").suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS:

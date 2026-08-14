@@ -9,6 +9,32 @@ export function ScoreChart({ candidates, algorithm = "aks" }: { candidates: Cand
   const maxTime = candidates[candidates.length - 1].timestamp_seconds || 1;
   const x = (value: number) => padX + (value / maxTime) * (width - padX * 2);
 
+  if (algorithm === "sage") {
+    const renderSageChart = (
+      field: "relevance_score" | "change_score",
+      title: string,
+    ) => {
+      const values = candidates.map((frame) => frame[field] ?? 0);
+      const minValue = Math.min(0, ...values);
+      const maxValue = Math.max(1e-6, ...values);
+      const y = (value: number) => height - padY - ((value - minValue) / (maxValue - minValue || 1)) * (height - padY * 2);
+      const points = candidates.map((frame) => `${x(frame.timestamp_seconds)},${y(frame[field] ?? 0)}`).join(" ");
+      return (
+        <section className="vsi-score-plot" key={field}>
+          <div className="vsi-score-heading"><h4>{title}</h4><span>横轴为视频时间</span></div>
+          <svg className="score-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${title}曲线`}>
+            {[minValue, (minValue + maxValue) / 2, maxValue].map((tick) => <line key={tick} x1={padX} x2={width - padX} y1={y(tick)} y2={y(tick)} className="grid-line" />)}
+            <polyline points={points} className="score-line" />
+            {candidates.filter((frame) => frame.selected).map((frame) => <circle key={frame.candidate_index} cx={x(frame.timestamp_seconds)} cy={y(frame[field] ?? 0)} r="6" className="selected-dot"><title>{`${frame.timestamp_seconds.toFixed(2)}s · ${(frame[field] ?? 0).toFixed(6)}`}</title></circle>)}
+            <text x={padX} y={height - 2} className="axis-label">0s</text>
+            <text x={width - padX} y={height - 2} textAnchor="end" className="axis-label">{maxTime.toFixed(1)}s</text>
+          </svg>
+        </section>
+      );
+    };
+    return <div className="chart-wrap"><div className="chart-heading"><h3>SAGE 候选帧分数</h3><span>橙色圆点为最终选中帧</span></div><div className="vsi-score-plots">{renderSageChart("relevance_score", "视觉相关性")}{renderSageChart("change_score", "视觉变化")}</div></div>;
+  }
+
   if (algorithm === "vsi") {
     const renderVsiChart = (
       field: "fused_score" | "sampling_probability",

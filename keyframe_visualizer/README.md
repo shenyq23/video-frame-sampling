@@ -1,12 +1,12 @@
 # Keyframe Visualizer
 
-一个独立于算法仓库输出目录的可视化工作台。当前接入 AKS 和 VSI：左上角可以切换算法；两种算法分别使用自己的视频预处理和 query 参数界面，但共享视频 session、query 历史、帧画廊、任务删除和 VLM 问答能力。
+一个独立于算法仓库输出目录的可视化工作台。当前接入 AKS、VSI 和 SAGE：左上角可以切换算法；三种算法分别使用自己的视频预处理和 query 参数界面，但共享视频 session、query 历史、帧画廊、任务删除和 VLM 问答能力。
 
 所有运行数据都写入 `keyframe_visualizer/data/`，不会修改 AKS 已有文件或输出。
 
 ## 目录
 
-- `backend/`：FastAPI、SQLite 任务队列以及 AKS/VSI Adapter。
+- `backend/`：FastAPI、SQLite 任务队列以及 AKS/VSI/SAGE Adapter。
 - `frontend/`：React + TypeScript 页面。
 - `config/feature_models.json`：服务端 Pangu/MEP 配置档案。
 - `config/vlm_models.json`：服务端 VLM 配置档案（当前支持 MEP VLM）。
@@ -59,7 +59,7 @@ http://127.0.0.1:8000/docs
 
 ## 数值参数输入
 
-所有数值参数（候选间隔、目标帧数、Batch size、解码线程、缓存 JPEG 质量、t1/t2 阈值、最大深度，以及 VSI 的 OCR 采样 FPS、OCR 截取区域、Top-K、检测帧预算、每轮采样数量、Text weight、随机种子）统一使用同一种输入框，行为如下：
+所有数值参数（候选间隔、目标帧数、Batch size、解码线程、缓存 JPEG 质量、t1/t2 阈值、最大深度，VSI 的 OCR 采样 FPS、OCR 截取区域、Top-K、检测帧预算、每轮采样数量、Text weight、随机种子，以及 SAGE 的关键帧预算）统一使用同一种输入框，行为如下：
 
 - 打开表单时预填推荐值，全选删除后输入框会真正变空，只显示灰色示例，不会残留 `0` 导致出现 `01.2` 这样的拼接结果；
 - 一律不提供上下箭头调参；
@@ -148,7 +148,7 @@ MEP_VLM_SECRET_KEY=your-vlm-secret-key
 
 结果页仍然可以手动切换输入帧集合并重新提问，展开面板下方的“VLM 输入”即可换服务或改写 Query。可选的三种输入是：
 
-- AKS/VSI 抽出帧；
+- AKS/VSI/SAGE 抽出帧；
 - 同数量均匀抽帧；
 - 所有候选帧 / VSI 访问帧。
 
@@ -173,6 +173,47 @@ npm run build
 ```
 
 后端启动不要求立即加载 CLIP；只有提交 CLIP 任务时才加载模型。GPU/MPS 模型任务由单 worker 顺序执行，避免并发任务同时占满显存。
+
+## SAGE 使用
+
+SAGE 源码和模型默认从与 `keyframe_visualizer` 平级的 `SAGE/` 目录加载。Windows 后端需要能读取以下本地资源：
+
+- `SAGE/models/clip/ViT-B-32.pt`；
+- `SAGE/models/sentence_transformer/paraphrase-multilingual-mpnet-base-v2/`。
+
+进入网页后选择 `SAGE`，准备视频时可以选择三种 ASR 来源：
+
+- `远程 ASR`：Windows 将视频上传到 `10.97.134.3:8091`，轮询服务器任务，下载 ASR JSON 后再执行本地 SAGE；
+- `上传现有 JSON`：随视频上传一个已经生成且能被 `SAGE/sage_frame/io.py` 读取的 JSON；
+- `不使用 ASR`：写入空的 ASR 段列表，运行纯视觉 SAGE。
+
+远程模式需要在 Windows 的 `keyframe_visualizer/.env` 中配置：
+
+```dotenv
+SAGE_ASR_BASE_URL=http://10.97.134.3:8091
+SAGE_ASR_TOKEN=your-real-token
+SAGE_ASR_CONNECT_TIMEOUT=15
+SAGE_ASR_UPLOAD_TIMEOUT=600
+SAGE_ASR_DOWNLOAD_TIMEOUT=120
+SAGE_ASR_JOB_TIMEOUT=2400
+SAGE_ASR_POLL_INTERVAL=5
+SAGE_ASR_DELETE_REMOTE_AFTER_DOWNLOAD=true
+```
+
+真实 Token 只保存在后端 `.env`，不会返回前端、写入 SQLite 参数或 Manifest。视频和 ASR 预处理结果保存在：
+
+```text
+data/sessions/<session-id>/source/          原视频及上传的 asr.json
+data/sessions/<session-id>/preprocess/asr.json
+data/sessions/<session-id>/preprocess/metadata.json
+data/sessions/<session-id>/preprocess/remote_asr_job.json
+```
+
+`remote_asr_job.json` 保存远程任务 ID 和下载状态。后端在上传、轮询或下载期间重启后会恢复同一个远程任务；JSON 已成功下载时会直接复用本地文件。`SAGE_ASR_DELETE_REMOTE_AFTER_DOWNLOAD=true` 时，本地 JSON 校验通过后会尽力清理服务器任务，清理失败不会丢失本地结果。
+
+视频准备完成后可以针对同一视频连续输入不同 Query 和关键帧预算。SAGE 对每条 Query 动态生成候选帧，因此候选帧缓存属于该 Query 的运行目录，而不是视频预处理目录。结果页提供 SAGE 抽出帧、同数量均匀抽帧、SAGE 候选帧，以及视觉相关性和视觉变化曲线。
+
+SAGE 必须通过视频 Session 使用；通用的单次 `/api/jobs` 上传接口会拒绝 SAGE 请求，以免跳过 ASR 准备流程。
 
 ## VSI 使用
 

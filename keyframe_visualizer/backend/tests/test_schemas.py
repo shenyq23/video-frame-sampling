@@ -4,7 +4,7 @@ import unittest
 
 from pydantic import ValidationError
 
-from app.schemas import AKSParameters, CreateJobConfig
+from app.schemas import AKSParameters, CreateJobConfig, CreateSessionConfig, SAGEParameters
 
 
 class SchemaTests(unittest.TestCase):
@@ -33,3 +33,21 @@ class SchemaTests(unittest.TestCase):
         for invalid in (0, -0.1, float("inf"), float("nan")):
             with self.subTest(invalid=invalid), self.assertRaises(ValidationError):
                 AKSParameters(sample_interval=invalid)
+
+    def test_sage_uses_its_own_parameter_model(self) -> None:
+        job = CreateJobConfig.model_validate(
+            {"algorithm": "sage", "query": "举起奖杯", "parameters": {"asr_mode": "none"}}
+        )
+        session = CreateSessionConfig.model_validate(
+            {"algorithm": "sage", "parameters": {"asr_mode": "upload", "device": "cpu"}}
+        )
+        self.assertIsInstance(job.parameters, SAGEParameters)
+        self.assertEqual(job.parameters.budget, 8)
+        self.assertIsInstance(session.parameters, SAGEParameters)
+        self.assertEqual(session.parameters.asr_mode, "upload")
+
+    def test_sage_rejects_invalid_mode_and_budget(self) -> None:
+        with self.assertRaises(ValidationError):
+            SAGEParameters(asr_mode="ocr")  # type: ignore[arg-type]
+        with self.assertRaises(ValidationError):
+            SAGEParameters(budget=0)

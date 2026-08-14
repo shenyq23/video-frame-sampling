@@ -1,5 +1,5 @@
 export type JobStatus = "queued" | "running" | "succeeded" | "failed";
-export type AlgorithmId = "aks" | "vsi";
+export type AlgorithmId = "aks" | "vsi" | "sage";
 export type ParameterSnapshot = Record<string, any>;
 
 export interface Job {
@@ -117,7 +117,11 @@ export interface CandidateFrame {
   order?: number;
   selected_by_aks?: boolean;
   selected_by_vsi?: boolean;
+  selected_by_sage?: boolean;
   fused_score?: number;
+  sage_score?: number;
+  change_score?: number;
+  base_score?: number;
   sampling_probability?: number;
   visited_order?: number;
 }
@@ -143,11 +147,15 @@ export interface FrameRecord {
   normalized_score?: number;
   selected_by_aks?: boolean;
   selected_by_vsi?: boolean;
+  selected_by_sage?: boolean;
   object_score?: number;
   text_score?: number;
   fused_score?: number;
   sampling_probability?: number;
   visited_order?: number;
+  sage_score?: number;
+  change_score?: number;
+  base_score?: number;
   selected?: boolean;
   segment_id?: number;
   segment_depth?: number | null;
@@ -232,6 +240,17 @@ export interface VsiQueryParameters extends VsiSessionParameters {
   text_weight: number;
   model: string;
   seed: number;
+  save_uniform_baseline: boolean;
+  save_candidate_frames: boolean;
+}
+
+export interface SageSessionParameters {
+  asr_mode: "remote" | "upload" | "none";
+  device: "cuda" | "mps" | "cpu";
+}
+
+export interface SageQueryParameters extends SageSessionParameters {
+  budget: number;
   save_uniform_baseline: boolean;
   save_candidate_frames: boolean;
 }

@@ -79,6 +79,72 @@ class ApiTests(unittest.TestCase):
             )
             self.assertEqual(response.status_code, 415)
 
+    def test_sage_sessions_accept_remote_upload_and_none_modes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sessions_dir = root / "sessions"
+            sessions_dir.mkdir()
+            sessions = SessionStore(root / "jobs.db")
+            with (
+                patch.object(main_module, "session_store", sessions),
+                patch.object(main_module, "SESSIONS_DIR", sessions_dir),
+                patch.object(main_module.session_manager, "enqueue", AsyncMock()),
+                TestClient(app) as client,
+            ):
+                for mode in ("remote", "none"):
+                    response = client.post(
+                        "/api/sessions",
+                        files={"video": (f"{mode}.mp4", b"video", "video/mp4")},
+                        data={
+                            "config": json.dumps(
+                                {"algorithm": "sage", "parameters": {"asr_mode": mode}}
+                            )
+                        },
+                    )
+                    self.assertEqual(response.status_code, 202, response.text)
+                    self.assertEqual(response.json()["parameters"]["asr_mode"], mode)
+
+                upload = client.post(
+                    "/api/sessions",
+                    files={
+                        "video": ("upload.mp4", b"video", "video/mp4"),
+                        "subtitle": ("result.json", b'{"segments": []}', "application/json"),
+                    },
+                    data={
+                        "config": json.dumps(
+                            {"algorithm": "sage", "parameters": {"asr_mode": "upload"}}
+                        )
+                    },
+                )
+                self.assertEqual(upload.status_code, 202, upload.text)
+                upload_dir = sessions_dir / upload.json()["id"] / "source"
+                self.assertEqual((upload_dir / "asr.json").read_text(encoding="utf-8"), '{"segments": []}')
+
+                missing = client.post(
+                    "/api/sessions",
+                    files={"video": ("missing.mp4", b"video", "video/mp4")},
+                    data={
+                        "config": json.dumps(
+                            {"algorithm": "sage", "parameters": {"asr_mode": "upload"}}
+                        )
+                    },
+                )
+                self.assertEqual(missing.status_code, 422)
+
+    def test_standalone_sage_job_requires_video_session(self) -> None:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/jobs",
+                files={"video": ("video.mp4", b"video", "video/mp4")},
+                data={
+                    "config": json.dumps(
+                        {"algorithm": "sage", "query": "事件", "parameters": {"asr_mode": "none"}}
+                    )
+                },
+            )
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("视频会话", response.json()["detail"])
+
     def test_uploads_valid_clip_model_archive(self) -> None:
         archive_bytes = io.BytesIO()
         with zipfile.ZipFile(archive_bytes, "w") as archive:
