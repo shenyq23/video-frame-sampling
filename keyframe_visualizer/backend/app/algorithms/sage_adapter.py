@@ -84,8 +84,25 @@ class SAGEAdapter(AlgorithmAdapter):
     def _ensure_source() -> None:
         if not SAGE_ROOT.is_dir():
             raise RuntimeError(f"SAGE directory is missing: {SAGE_ROOT}")
-        if str(SAGE_ROOT) not in sys.path:
-            sys.path.insert(0, str(SAGE_ROOT))
+        root = SAGE_ROOT.resolve()
+        sys.path[:] = [
+            entry
+            for entry in sys.path
+            if Path(entry or ".").resolve() != root
+        ]
+        sys.path.insert(0, str(root))
+
+        loaded = sys.modules.get("sage_frame")
+        loaded_file = getattr(loaded, "__file__", None) if loaded else None
+        if loaded_file:
+            loaded_path = Path(loaded_file).resolve()
+            expected_package = root / "sage_frame"
+            if expected_package != loaded_path.parent and expected_package not in loaded_path.parents:
+                raise RuntimeError(
+                    "检测到 Python 已从错误位置加载 sage_frame。"
+                    f"期望目录：{expected_package}；实际文件：{loaded_path}。"
+                    "请彻底重启后端，并检查 PYTHONPATH 或重复安装的 sage_frame。"
+                )
 
     @staticmethod
     def _sha256(path: Path) -> str:
@@ -239,6 +256,19 @@ class SAGEAdapter(AlgorithmAdapter):
         return max(0, min(total_frames - 1, round(time_seconds * fps)))
 
     @staticmethod
+    def _selector_candidates(selector: Any) -> list[Any]:
+        candidates = getattr(selector, "last_candidates", None)
+        if candidates is None:
+            module = sys.modules.get(type(selector).__module__)
+            source = getattr(module, "__file__", "未知路径")
+            raise RuntimeError(
+                "当前 SAGESelector 与 keyframe_visualizer 不兼容："
+                "缺少 last_candidates。请同步修改后的 SAGE/sage_frame/selector.py，"
+                f"然后彻底重启后端。实际加载文件：{source}"
+            )
+        return list(candidates)
+
+    @staticmethod
     def _export_frames(
         video_path: Path,
         frame_specs: list[dict[str, Any]],
@@ -331,11 +361,12 @@ class SAGEAdapter(AlgorithmAdapter):
             budget=int(parameters.get("budget", 8)),
             fps=provider.fps,
         )
+        candidates = self._selector_candidates(selector)
 
         output_dir.mkdir(parents=True, exist_ok=True)
         candidate_position = {
             (candidate.time, candidate.segment_index): index
-            for index, candidate in enumerate(selector.last_candidates)
+            for index, candidate in enumerate(candidates)
         }
         selected_keys = {(frame.time, frame.segment_index) for frame in keyframes}
         selected_specs = [
@@ -404,7 +435,7 @@ class SAGEAdapter(AlgorithmAdapter):
                 "selected_by_sage": (candidate.time, candidate.segment_index) in selected_keys,
                 "selected": (candidate.time, candidate.segment_index) in selected_keys,
             }
-            for index, candidate in enumerate(selector.last_candidates)
+            for index, candidate in enumerate(candidates)
         ]
         candidate_records = (
             self._export_frames(
@@ -433,12 +464,12 @@ class SAGEAdapter(AlgorithmAdapter):
                 "mode": "query-dependent-regions",
                 "interval_seconds": 1.0,
                 "effective_interval_seconds": 1.0,
-                "candidate_count": len(selector.last_candidates),
+                "candidate_count": len(candidates),
             },
             "summary": {
                 "requested_keyframes": int(parameters.get("budget", 8)),
                 "selected_keyframes": len(selected_records),
-                "candidate_frames": len(selector.last_candidates),
+                "candidate_frames": len(candidates),
                 "segments": len(segments),
                 "asr_segments": len(asr),
             },

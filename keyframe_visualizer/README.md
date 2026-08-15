@@ -181,6 +181,8 @@ SAGE 源码和模型默认从与 `keyframe_visualizer` 平级的 `SAGE/` 目录�
 - `SAGE/models/clip/ViT-B-32.pt`；
 - `SAGE/models/sentence_transformer/paraphrase-multilingual-mpnet-base-v2/`。
 
+可视化还要求 `SAGE/sage_frame/selector.py` 提供 `SAGESelector.last_candidates`，用于导出完整候选帧和绘制分数曲线。该修改属于当前工作区的 SAGE 集成代码，不在上游 SAGE `origin/main` 中，因此同步到 Windows 时必须同时同步 `keyframe_visualizer/` 和修改后的 `SAGE/sage_frame/selector.py`。后端会校验实际加载的 `sage_frame` 路径与该接口；版本或路径不匹配时会直接给出明确错误，不会生成退化的候选帧结果。
+
 进入网页后选择 `SAGE`，准备视频时可以选择三种 ASR 来源：
 
 - `远程 ASR`：Windows 将视频上传到 `10.97.134.3:8091`，轮询服务器任务，下载 ASR JSON 后再执行本地 SAGE；

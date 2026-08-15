@@ -63,6 +63,10 @@ class SAGEAdapterTests(unittest.TestCase):
         self.assertEqual(SAGEAdapter._frame_index_at(4.0, 25.0, 100), 99)
         self.assertEqual(SAGEAdapter._frame_index_at(1.0, 25.0, 100), 25)
 
+    def test_old_selector_without_candidate_trace_is_rejected_clearly(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "缺少 last_candidates"):
+            SAGEAdapter._selector_candidates(object())
+
     def test_run_from_session_exports_standard_manifest(self) -> None:
         adapter = SAGEAdapter()
         adapter._ensure_source()
