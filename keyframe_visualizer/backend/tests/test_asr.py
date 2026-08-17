@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from app.asr.client import SageAsrClient, SageAsrError
+from app.asr.formats import parse_asr_segments
 
 
 class SageAsrClientTests(unittest.TestCase):
@@ -117,6 +118,44 @@ class SageAsrClientTests(unittest.TestCase):
             self.assertEqual(payload["job_id"], "job-3")
             self.assertEqual(post.call_args.kwargs["headers"]["Authorization"], "Bearer secret")
             self.assertEqual(post.call_args.kwargs["files"]["video"][0], "video.mp4")
+
+
+class SageAsrFormatTests(unittest.TestCase):
+    def test_parses_standard_sage_segments_in_seconds(self) -> None:
+        segments = parse_asr_segments(
+            {
+                "segments": [
+                    {"start_time": 1.25, "end_time": 2.5, "text": "标准格式"}
+                ]
+            }
+        )
+        self.assertEqual(
+            segments,
+            [{"start": 1.25, "end": 2.5, "text": "标准格式"}],
+        )
+
+    def test_parses_nsp_sentence_info_and_converts_milliseconds(self) -> None:
+        segments = parse_asr_segments(
+            {
+                "code": "0",
+                "content": [
+                    {
+                        "asr_result": "第一句第二句",
+                        "sentence_info": [
+                            {"start": 2500, "end": 4000, "text": "第二句", "spk": 1},
+                            {"start": 1110, "end": 1250, "text": "第一句", "spk": 0},
+                        ],
+                    }
+                ],
+            }
+        )
+        self.assertEqual(
+            segments,
+            [
+                {"start": 1.11, "end": 1.25, "text": "第一句", "speaker": 0},
+                {"start": 2.5, "end": 4.0, "text": "第二句", "speaker": 1},
+            ],
+        )
 
 
 if __name__ == "__main__":

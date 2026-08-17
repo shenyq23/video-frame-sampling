@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from ..asr.client import SageAsrClient
+from ..asr.formats import load_asr_segments
 from ..settings import (
     SAGE_CLIP_MODEL,
     SAGE_ROOT,
@@ -142,9 +143,12 @@ class SAGEAdapter(AlgorithmAdapter):
 
     @staticmethod
     def _load_asr(path: Path) -> list[Any]:
-        from sage_frame.io import load_asr_json
+        from sage_frame.models import ASRSegment
 
-        return load_asr_json(path)
+        return [
+            ASRSegment(segment["start"], segment["end"], segment["text"])
+            for segment in load_asr_segments(path)
+        ]
 
     def prepare_session(
         self,
@@ -447,6 +451,8 @@ class SAGEAdapter(AlgorithmAdapter):
         (output_dir / "sage_trace.log").write_text("\n".join(trace), encoding="utf-8")
 
         segments = [asdict(segment) for segment in selector.last_segments]
+        asr_metadata = dict(metadata.get("asr", {}))
+        asr_metadata["segment_count"] = len(asr)
         manifest = {
             "schema_version": "1.0",
             "run_id": job_id,
@@ -459,7 +465,7 @@ class SAGEAdapter(AlgorithmAdapter):
             "video": metadata["video"],
             "query": query,
             "parameters": parameters,
-            "asr": metadata.get("asr", {}),
+            "asr": asr_metadata,
             "candidate_sampling": {
                 "mode": "query-dependent-regions",
                 "interval_seconds": 1.0,

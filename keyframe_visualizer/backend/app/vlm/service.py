@@ -11,6 +11,7 @@ from typing import Any, Optional, Sequence
 
 from PIL import Image
 
+from ..asr.formats import load_asr_segments
 from ..settings import load_vlm_profiles
 from .client import MepVlmClient, VlmRequestError
 
@@ -187,28 +188,9 @@ class VlmAnswerService:
             if not asr_path.is_file():
                 continue
             try:
-                payload = json.loads(asr_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError) as error:
+                return load_asr_segments(asr_path)
+            except ValueError as error:
                 raise VlmRequestError(f"无法读取 SAGE ASR：{error}") from error
-            records = payload.get("segments", []) if isinstance(payload, dict) else payload
-            if not isinstance(records, list):
-                raise VlmRequestError("SAGE ASR JSON 的 segments 必须是数组")
-            segments: list[dict[str, Any]] = []
-            for index, item in enumerate(records):
-                if not isinstance(item, dict):
-                    raise VlmRequestError(f"SAGE ASR 第 {index + 1} 段不是对象")
-                start = item.get("start", item.get("start_time"))
-                end = item.get("end", item.get("end_time"))
-                text = str(item.get("text", "")).strip()
-                if start is None or end is None or not text:
-                    continue
-                try:
-                    segments.append(
-                        {"start": float(start), "end": float(end), "text": text}
-                    )
-                except (TypeError, ValueError) as error:
-                    raise VlmRequestError(f"SAGE ASR 第 {index + 1} 段时间格式无效") from error
-            return sorted(segments, key=lambda item: (item["start"], item["end"]))
         raise VlmRequestError("SAGE 会话中的 ASR 文件不存在，无法连同抽帧结果发送给 VLM")
 
     @staticmethod
