@@ -520,6 +520,12 @@ export function ResultView({
                   使用 {vlmAnswer.used_frame_count}/{vlmAnswer.source_frame_count} 帧
                   {vlmAnswer.frames_limited ? "（已按时间均匀缩减）" : ""}
                 </span>
+                {vlmAnswer.asr_included && (
+                  <span>
+                    已附加 ASR {vlmAnswer.asr_segments_used}/{vlmAnswer.asr_segment_count} 段
+                    {vlmAnswer.asr_truncated ? "（已截断）" : ""}
+                  </span>
+                )}
                 <span>耗时 {formatDuration(vlmAnswer.generation_duration_seconds)}</span>
                 <time dateTime={vlmAnswer.created_at}>
                   {new Date(vlmAnswer.created_at).toLocaleString()}
@@ -576,7 +582,10 @@ export function ResultView({
               </label>
             </div>
             <div className="vlm-submit-row">
-              <p>当前集合共 {activeFrames.length} 帧；服务会按时间顺序读取，并在超过配置上限时均匀缩减。</p>
+              <p>
+                当前集合共 {activeFrames.length} 帧；服务会按时间顺序读取，并在超过配置上限时均匀缩减。
+                {job.algorithm === "sage" && job.parameters.asr_mode !== "none" ? " 同时附加该视频的 ASR 转写。" : ""}
+              </p>
               <button
                 className="primary-button vlm-submit"
                 type="button"

@@ -226,4 +226,8 @@ class VlmAnswerResult(BaseModel):
     source_frame_count: int
     used_frame_count: int
     frames_limited: bool
+    asr_included: bool = False
+    asr_segment_count: int = 0
+    asr_segments_used: int = 0
+    asr_truncated: bool = False
     used_frames: list[VlmUsedFrame]

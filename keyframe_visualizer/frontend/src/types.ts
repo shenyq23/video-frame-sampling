@@ -83,6 +83,10 @@ export interface VlmAnswer {
   source_frame_count: number;
   used_frame_count: number;
   frames_limited: boolean;
+  asr_included: boolean;
+  asr_segment_count: number;
+  asr_segments_used: number;
+  asr_truncated: boolean;
   used_frames: VlmUsedFrame[];
 }
 

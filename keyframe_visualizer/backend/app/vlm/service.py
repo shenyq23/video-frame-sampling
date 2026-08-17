@@ -21,9 +21,9 @@ FRAME_SET_NAMES = {
     "candidates": "候选帧",
 }
 
-SYSTEM_PROMPT = """你是一名视频问答助手。请综合按照视频时间顺序提供的视觉信息，直接、自然地回答用户问题。
+SYSTEM_PROMPT = """你是一名视频问答助手。请综合提供的语音转写（如有）和按照视频时间顺序提供的视觉信息，直接、自然地回答用户问题。
 只输出最终答案，不要描述分析过程，不要提及“关键帧”“抽帧”“图片”“画面编号”“输入内容”或你获取信息的方式。
-不要把未观察到的内容当作事实；如果现有视觉信息不足以回答，请简洁说明无法确定，不要猜测。
+不要把未观察到的内容当作事实；如果现有信息不足以回答，请简洁说明无法确定，不要猜测。
 除非用户明确要求提供时间依据，否则不要主动引用画面编号或时间戳。"""
 
 
@@ -49,11 +49,17 @@ class VlmAnswerService:
         config = dict(profile.get("config", {}))
         max_frames = max(1, int(config.get("max_frames", 32)))
         used_frames = self._limit_frames(frames, max_frames)
+        asr_segments = self._asr_segments(manifest, media_roots)
+        max_asr_characters = max(0, int(config.get("max_asr_characters", 40000)))
+        asr_text, asr_segments_used, asr_truncated = self._format_asr(
+            asr_segments, max_asr_characters
+        )
         content = self._build_content(
             output_dir=output_dir,
             media_roots=media_roots,
             frames=used_frames,
             query=query,
+            asr_text=asr_text,
             max_dimension=max(64, int(config.get("max_image_dimension", 1280))),
             jpeg_quality=min(100, max(1, int(config.get("jpeg_quality", 85)))),
         )
@@ -88,6 +94,10 @@ class VlmAnswerService:
             "source_frame_count": len(frames),
             "used_frame_count": len(used_frames),
             "frames_limited": len(used_frames) < len(frames),
+            "asr_included": bool(asr_text),
+            "asr_segment_count": len(asr_segments),
+            "asr_segments_used": asr_segments_used,
+            "asr_truncated": asr_truncated,
             "used_frames": [
                 {
                     "order": frame.get("order"),
@@ -165,6 +175,69 @@ class VlmAnswerService:
         indices = [round(index * (len(frames) - 1) / (limit - 1)) for index in range(limit)]
         return [frames[index] for index in indices]
 
+    @staticmethod
+    def _asr_segments(
+        manifest: dict[str, Any], media_roots: Sequence[Path] | None
+    ) -> list[dict[str, Any]]:
+        algorithm = manifest.get("algorithm", {})
+        if not isinstance(algorithm, dict) or algorithm.get("id") != "sage":
+            return []
+        asr_metadata = manifest.get("asr", {})
+        if (
+            not isinstance(asr_metadata, dict)
+            or asr_metadata.get("mode") not in {"remote", "upload"}
+        ):
+            return []
+
+        for root in media_roots or []:
+            asr_path = root / "preprocess" / "asr.json"
+            if not asr_path.is_file():
+                continue
+            try:
+                payload = json.loads(asr_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as error:
+                raise VlmRequestError(f"无法读取 SAGE ASR：{error}") from error
+            records = payload.get("segments", []) if isinstance(payload, dict) else payload
+            if not isinstance(records, list):
+                raise VlmRequestError("SAGE ASR JSON 的 segments 必须是数组")
+            segments: list[dict[str, Any]] = []
+            for index, item in enumerate(records):
+                if not isinstance(item, dict):
+                    raise VlmRequestError(f"SAGE ASR 第 {index + 1} 段不是对象")
+                start = item.get("start", item.get("start_time"))
+                end = item.get("end", item.get("end_time"))
+                text = str(item.get("text", "")).strip()
+                if start is None or end is None or not text:
+                    continue
+                try:
+                    segments.append(
+                        {"start": float(start), "end": float(end), "text": text}
+                    )
+                except (TypeError, ValueError) as error:
+                    raise VlmRequestError(f"SAGE ASR 第 {index + 1} 段时间格式无效") from error
+            return sorted(segments, key=lambda item: (item["start"], item["end"]))
+        raise VlmRequestError("SAGE 会话中的 ASR 文件不存在，无法连同抽帧结果发送给 VLM")
+
+    @staticmethod
+    def _format_asr(
+        segments: list[dict[str, Any]], max_characters: int
+    ) -> tuple[str, int, bool]:
+        if not segments or max_characters <= 0:
+            return "", 0, bool(segments)
+        lines: list[str] = []
+        length = 0
+        for segment in segments:
+            line = (
+                f"[{segment['start']:.3f}-{segment['end']:.3f} 秒] "
+                f"{segment['text']}"
+            )
+            added = len(line) + (1 if lines else 0)
+            if length + added > max_characters:
+                break
+            lines.append(line)
+            length += added
+        return "\n".join(lines), len(lines), len(lines) < len(segments)
+
     def _build_content(
         self,
         *,
@@ -172,17 +245,27 @@ class VlmAnswerService:
         media_roots: Sequence[Path] | None = None,
         frames: list[dict[str, Any]],
         query: str,
+        asr_text: str,
         max_dimension: int,
         jpeg_quality: int,
     ) -> list[dict[str, Any]]:
+        introduction = (
+            f"用户问题：{query}\n"
+            "接下来是来自同一视频、按照时间顺序排列的视觉信息。"
+            "请综合判断并直接回答用户问题。"
+        )
+        if asr_text:
+            introduction = (
+                f"用户问题：{query}\n"
+                "以下是同一视频的带时间语音转写：\n"
+                f"{asr_text}\n"
+                "接下来是按照时间顺序排列的视觉信息。"
+                "请综合语音和视觉信息，直接回答用户问题。"
+            )
         content: list[dict[str, Any]] = [
             {
                 "type": "text",
-                "text": (
-                    f"用户问题：{query}\n"
-                    "接下来是来自同一视频、按照时间顺序排列的视觉信息。"
-                    "请综合判断并直接回答用户问题。"
-                ),
+                "text": introduction,
             }
         ]
         roots = [output_dir, *(media_roots or [])]
