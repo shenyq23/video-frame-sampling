@@ -241,7 +241,7 @@ class VlmAnswerServiceTests(unittest.TestCase):
             self.assertTrue(result["asr_included"])
             self.assertFalse(result["asr_truncated"])
 
-    def test_sage_none_and_non_sage_requests_do_not_include_asr(self) -> None:
+    def test_non_sage_requests_do_not_include_asr(self) -> None:
         segment = [{"start": 0.0, "end": 1.0, "text": "不应读取"}]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -251,12 +251,6 @@ class VlmAnswerServiceTests(unittest.TestCase):
                 json.dumps({"segments": segment}, ensure_ascii=False), encoding="utf-8"
             )
             service = VlmAnswerService()
-            self.assertEqual(
-                service._asr_segments(
-                    {"algorithm": {"id": "sage"}, "asr": {"mode": "none"}}, [root]
-                ),
-                [],
-            )
             self.assertEqual(
                 service._asr_segments(
                     {"algorithm": {"id": "aks"}, "asr": {"mode": "upload"}}, [root]

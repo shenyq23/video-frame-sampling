@@ -182,13 +182,6 @@ class VlmAnswerService:
         algorithm = manifest.get("algorithm", {})
         if not isinstance(algorithm, dict) or algorithm.get("id") != "sage":
             return []
-        asr_metadata = manifest.get("asr", {})
-        if (
-            not isinstance(asr_metadata, dict)
-            or asr_metadata.get("mode") not in {"remote", "upload"}
-        ):
-            return []
-
         for root in media_roots or []:
             asr_path = root / "preprocess" / "asr.json"
             if not asr_path.is_file():
