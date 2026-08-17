@@ -333,11 +333,15 @@ export function ResultView({
     }
     if (job.status !== "succeeded" || !manifest || !savedAnswerChecked) return;
     if (vlmBusy) return;
-    // Whatever happens next, this job has had its one shot at auto-running.
-    onAutoVlmStarted();
-    if (vlmAnswer || vlmError) return;
+    if (vlmAnswer) {
+      onAutoVlmStarted();
+      return;
+    }
     if (!vlmProfile || !vlmQuery.trim() || !frameSets?.selected.frames.length) return;
+    // Clear the one-shot marker only after every request input is ready. A
+    // transient saved-answer lookup error should not force a second click.
     void askVlm();
+    onAutoVlmStarted();
   }, [
     autoRunPending,
     job?.id,
@@ -346,7 +350,6 @@ export function ResultView({
     savedAnswerChecked,
     vlmBusy,
     vlmAnswer,
-    vlmError,
     vlmProfile,
     vlmQuery,
     frameSets,
