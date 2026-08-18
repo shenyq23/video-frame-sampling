@@ -106,6 +106,39 @@ class SageAsrClientTests(unittest.TestCase):
                     progress=lambda *_: None,
                 )
 
+    def test_empty_result_failure_falls_back_to_empty_asr(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            destination = root / "asr.json"
+            state = root / "remote_asr_job.json"
+            state.write_text(
+                json.dumps({"job_id": "empty-job", "downloaded": False}),
+                encoding="utf-8",
+            )
+            client = self._client()
+            stages: list[str] = []
+            with patch.object(
+                client,
+                "_read_job",
+                return_value={
+                    "status": "failed",
+                    "error": "asr_request returned an empty result",
+                },
+            ):
+                job_id = client.generate(
+                    video_path=root / "unused.mp4",
+                    destination=destination,
+                    state_path=state,
+                    progress=lambda stage, _: stages.append(stage),
+                )
+
+            self.assertEqual(job_id, "empty-job")
+            self.assertEqual(json.loads(destination.read_text(encoding="utf-8"))["segments"], [])
+            saved_state = json.loads(state.read_text(encoding="utf-8"))
+            self.assertTrue(saved_state["downloaded"])
+            self.assertTrue(saved_state["empty"])
+            self.assertTrue(any("纯视觉" in stage for stage in stages))
+
     def test_upload_sends_bearer_token_and_video(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             video = Path(directory) / "video.mp4"

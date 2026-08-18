@@ -60,6 +60,47 @@ class SageAsrClient:
         temporary.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         os.replace(temporary, state_path)
 
+    @staticmethod
+    def _is_empty_result_failure(job: dict[str, Any]) -> bool:
+        error = str(job.get("error", "")).strip().lower()
+        return "asr_request returned an empty result" in error
+
+    def _finish_with_empty_asr(
+        self,
+        *,
+        job_id: str,
+        destination: Path,
+        state_path: Path,
+        state: dict[str, Any],
+        progress: Callable[[str, float], None],
+    ) -> str:
+        temporary = destination.with_suffix(destination.suffix + ".part")
+        temporary.write_text(
+            json.dumps(
+                {
+                    "segments": [],
+                    "empty": True,
+                    "reason": "remote_asr_empty_result",
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        os.replace(temporary, destination)
+        self._write_state(
+            state_path,
+            {
+                "job_id": job_id,
+                "created_at": state.get("created_at", time.time()),
+                "downloaded": True,
+                "downloaded_at": time.time(),
+                "empty": True,
+            },
+        )
+        progress("远程 ASR 未识别到语音，自动使用纯视觉模式", 0.88)
+        return job_id
+
     def _request_job(self, video_path: Path) -> dict[str, Any]:
         try:
             with video_path.open("rb") as source:
@@ -147,6 +188,14 @@ class SageAsrClient:
                 job_id = None
             else:
                 if job.get("status") == "failed":
+                    if self._is_empty_result_failure(job):
+                        return self._finish_with_empty_asr(
+                            job_id=job_id,
+                            destination=destination,
+                            state_path=state_path,
+                            state=state,
+                            progress=progress,
+                        )
                     raise SageAsrError(f"远程 ASR 失败：{job.get('error') or '未知错误'}")
         if not job_id:
             progress("上传视频到远程 ASR", 0.10)
@@ -172,6 +221,14 @@ class SageAsrClient:
             if remote_status == "succeeded":
                 break
             if remote_status == "failed":
+                if self._is_empty_result_failure(job):
+                    return self._finish_with_empty_asr(
+                        job_id=job_id,
+                        destination=destination,
+                        state_path=state_path,
+                        state=state,
+                        progress=progress,
+                    )
                 raise SageAsrError(f"远程 ASR 失败：{job.get('error') or '未知错误'}")
             if elapsed >= self.job_timeout:
                 raise SageAsrError(f"远程 ASR 超过 {self.job_timeout:.0f} 秒仍未完成")
